@@ -4,7 +4,7 @@ from document_image_utils.image import calculate_rotation_direction
 
 
 file_path = os.path.dirname(os.path.realpath(__file__))
-study_cases_folder = f'{file_path}/../../../../study_cases'
+study_cases_folder = f'{file_path}/../../../study_cases'
 
 
 def test_rotation_direction_counter_clockwise_1():

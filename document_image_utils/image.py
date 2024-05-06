@@ -380,7 +380,7 @@ def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop
     rotation_angle = 90 - abs(angle)
     if direction == 'counter_clockwise':
         rotation_angle = -rotation_angle
-    img = ndimage.rotate(og_img, rotation_angle)
+    img = ndimage.rotate(og_img, rotation_angle,reshape=True,cval=255)
 
 
     ## test images
