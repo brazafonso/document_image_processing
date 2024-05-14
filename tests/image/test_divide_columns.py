@@ -8,11 +8,11 @@ study_cases_folder = f'{file_path}/../../../study_cases'
 
 
 def test_divide_columns_1():
-    rotated_image = f'{study_cases_folder}/simple template/2-1.jpg'
-    assert len(divide_columns(rotated_image)) == 3
+    image = f'{study_cases_folder}/simple template/2-1.jpg'
+    assert len(divide_columns(image)) == 3
 
 def test_divide_columns_2():
-    rotated_image = f'{study_cases_folder}/simple template/2-2.jpg'
-    assert len(divide_columns(rotated_image)) == 3
+    image = f'{study_cases_folder}/simple template/2-2.jpg'
+    assert len(divide_columns(image)) == 3
 
 

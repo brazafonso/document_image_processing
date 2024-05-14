@@ -526,9 +526,157 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
 
     return columns
 
+
+
+
+def cut_document_margins(image_path:str, method:str='WhittakerSmoother', logs:bool=False)->Box:
+    '''
+    Cut document margins by analysing pixel frequency.
     
+    Margins should be great peaks of black pixels followed or preceded (depending on the side) by a great drop in frequency.'''
+
+    cut_document = None
+
+    methods = ['WhittakerSmoother','savgol_filter']
+    if method not in methods:
+        method = 'WhittakerSmoother'
+
+    if not os.path.exists(image_path):
+        print('Image not found')
+        return cut_document
+
+    image = cv2.imread(image_path)
+    cut_document = Box({'left':0,'right':image.shape[1],'top':0,'bottom':image.shape[0]})
+
+    # black and white
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # clean noise
+    se=cv2.getStructuringElement(cv2.MORPH_RECT , (8,8))
+    bg=cv2.morphologyEx(gray, cv2.MORPH_DILATE, se)
+    gray=cv2.divide(gray, bg, scale=255)
+    # binarize
+    binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
 
+    # get frequency of black pixels per column
+    x_axis_freq = np.add.reduce(binarized, axis=0)
+
+    if x_axis_freq.any():
+
+        if method == 'WhittakerSmoother':
+            whittaker_smoother = WhittakerSmoother(lmbda=2e4, order=2, data_length = len(x_axis_freq))
+            x_axis_freq_smooth = whittaker_smoother.smooth(x_axis_freq)
+        elif method == 'savgol_filter':
+            x_axis_freq_smooth = savgol_filter(x_axis_freq, round(len(x_axis_freq)*0.1), 2)
+
+        x_axis_freq_smooth = [i if i > 0 else 0 for i in x_axis_freq_smooth ]
 
 
+        peaks,_ = find_peaks(x_axis_freq_smooth,prominence=0.2*(max(x_axis_freq_smooth)- min(x_axis_freq_smooth)))
+        
+
+        x_axis_freq_smooth = np.array(x_axis_freq_smooth)
+
+        # average of frequency
+        average_smooth_frequency = np.average(x_axis_freq_smooth)
+
+        if logs:
+            
+            # create 4 plots
+            plt.subplot(2, 2, 1)
+            plt.plot(peaks, x_axis_freq[peaks], "ob"); plt.plot(x_axis_freq); plt.legend(['prominence'])
+            plt.title('Frequency')
+
+
+            plt.subplot(2, 2, 2)
+            plt.plot(peaks, x_axis_freq_smooth[peaks], "ob"); plt.plot(x_axis_freq_smooth); plt.legend(['prominence'])
+            # average line
+            plt.plot([0,len(x_axis_freq_smooth)], [average_smooth_frequency, average_smooth_frequency], "r--");
+            plt.title('Frequency Smooth')
+
+            # binarized image
+            plt.subplot(2, 2, 3)
+            plt.imshow(binarized, cmap='gray')
+            plt.title('Binarized Image')
+
+            plt.show()
+
+        if logs:
+            print('Peaks',peaks)
+
+
+        if peaks.any():
+
+            # get left and right margins potential peaks
+                # they need to be between out of the 10% to 90% range of the x axis of the image
+            left_margin = peaks[0] if peaks[0] <= len(x_axis_freq_smooth)*0.1 else None
+            right_margin = None if len(peaks) == 1 else peaks[-1] if peaks[-1] >= len(x_axis_freq_smooth)*0.9 else None
+
+            if logs:
+                print('left margin',left_margin)
+                print('right margin',right_margin)
+
+            max_freq = max(x_axis_freq_smooth)
+            # check left margin
+            if left_margin:
+
+                # peak needs to be followed by a drop to less than 10% of max frequency
+                last_point = left_margin
+                i = last_point + 1
+                while i <= len(x_axis_freq_smooth)*0.1 and x_axis_freq_smooth[i] < x_axis_freq_smooth[last_point] :
+                    last_point = i
+                    i += 1
+
+
+                if logs:
+                    print('lowest point',last_point)
+                    print(x_axis_freq_smooth[last_point])
+
+                if x_axis_freq_smooth[last_point] <= max_freq*0.1:
+                    left_margin = last_point
+                else:
+                    left_margin = 0
+            else: 
+                left_margin = 0
+
+            # check right margin
+            if right_margin:
+
+                # peak needs to be preceded by a drop to less than 10% of max frequency
+                last_point = right_margin
+                i = last_point - 1
+                while i >= len(x_axis_freq_smooth)*0.9 and x_axis_freq_smooth[i] < x_axis_freq_smooth[last_point] :
+                    last_point = i
+                    i -= 1
+
+                if logs:
+                    print('lowest point',last_point)
+                    print(x_axis_freq_smooth[last_point])
+
+                if x_axis_freq_smooth[last_point] <= max_freq*0.1:
+                    right_margin = last_point
+                else:
+                    right_margin = len(x_axis_freq_smooth)
+            else: 
+                right_margin = len(x_axis_freq_smooth)
+
+            if logs:
+                print('Left margin',left_margin)
+                print('Right margin',right_margin)
+
+                # draw plot with left and right margins
+                plt.imshow(binarized, cmap='gray')
+
+                if left_margin:
+                    plt.plot([left_margin,left_margin], [0,binarized.shape[0]], "r--");
+                if right_margin:
+                    plt.plot([right_margin,right_margin], [0,binarized.shape[0]], "r--");
+                
+
+                plt.show()
+
+
+            cut_document = Box(left_margin,right_margin,0,binarized.shape[0])
+
+    return cut_document
 
