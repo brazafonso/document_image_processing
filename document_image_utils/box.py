@@ -38,14 +38,17 @@ class Box:
         self.right = json_dict['right']
         self.top = json_dict['top']
         self.bottom = json_dict['bottom']
-        self.width = json_dict['width']
-        self.height = json_dict['height']
+        self.width = self.right - self.left
+        self.height = self.bottom - self.top
 
     def copy(self):
         return Box(self.left,self.right,self.top,self.bottom)
 
     def __str__(self):
-        return f'left:{self.left} right:{self.right} top:{self.top} bottom:{self.bottom}'
+        return f'left:{self.left} right:{self.right} top:{self.top} bottom:{self.bottom} width:{self.width} height:{self.height}'
+    
+    def __dict__(self):
+        return self.to_dict()
 
     def to_json(self):
         return {
@@ -67,66 +70,68 @@ class Box:
             'height':self.height
         }
     
+
+    def update(self, left:int=None, right:int=None, top:int=None, bottom:int=None):
+        if left is not None:
+            self.left = left
+        if right is not None:
+            self.right = right
+        if top is not None:
+            self.top = top
+        if bottom is not None:
+            self.bottom = bottom
+
+        self.width = self.right - self.left
+        self.height = self.bottom - self.top
+
+    
     def valid(self):
         '''Check if box is valid'''
         if self.left is None or self.right is None or self.top is None or self.bottom is None or self.left>self.right or self.top>self.bottom:
             return False
         return True
     
-    def within_vertical_boxes(self,box,range=0):
-        '''Check if boxes are within each other vertically, considering a range'''
-        # avoid division by zero
-        topmost = min(self.top,box.top)
-        topleast = max(self.top,box.top)
-        bottommost = max(self.bottom,box.bottom)
-        bottomlest = min(self.bottom,box.bottom)
 
-        # avoid division by zero
-        top_ratio = abs(topleast / topmost - 1) if topmost != 0 else abs(topleast / 0.1 - 1)
-        bottom_ratio = abs(bottomlest / bottommost - 1) if bottommost != 0 else abs(bottomlest / 0.1 - 1)
-
-        # check if self is within box with range
-        if (topmost == topleast or self.top <= box.top or top_ratio <= range) and (bottommost == bottomlest or self.bottom >= box.bottom or bottom_ratio <= range):
-            return True
-
+    def area(self):
+        return self.width * self.height
+    
+    def within_vertical_boxes(self,box: 'Box',range:float=0):
+        '''Check if boxes are within each other vertically, considering a range (0-1)'''
+        
         # check if box is within self with range
-        elif (topmost == topleast or box.top <= self.top or top_ratio<= range) and (bottommost == bottomlest or box.bottom >= self.bottom or bottom_ratio <= range):
+        if (self.top - self.height*range <= box.top and self.bottom + self.height*range >= box.bottom):
             return True
+        
+        # check if self is within box with range
+        if (box.top - box.height*range <= self.top and box.bottom + box.height*range >= self.bottom):
+            return True
+
+
         return False
             
 
-    def within_horizontal_boxes(self, box, range=0):
-        '''Check if boxes are within each other horizontally, considering a range'''
-        # avoid division by zero
-        leftmost = min(self.left, box.left)
-        leftleast = max(self.left, box.left)
-        rightmost = max(self.right, box.right)
-        rightleast = min(self.right, box.right)
-
+    def within_horizontal_boxes(self, box: 'Box', range:float=0):
+        '''Check if boxes are within each other horizontally, considering a range (0-1)'''
         
-        # avoid division by zero
-        left_ratio = abs(leftleast / leftmost - 1) if leftmost != 0 else abs(leftleast / 0.1 - 1)
-        right_ratio = abs(rightleast / rightmost - 1) if rightmost != 0 else abs(rightleast / 0.1 - 1)
-
         # check if box is within self with range
-        if (self.left <= box.left or left_ratio <= range) and (self.right >= box.right or right_ratio <= range):
+        if (self.left - self.width*range <= box.left and self.right + self.width*range >= box.right):
             return True
-
+        
         # check if self is within box with range
-        if (box.left <= self.left or left_ratio <= range) and (box.right >= self.right or right_ratio <= range):
+        if (box.left - box.width*range <= self.left and box.right + box.width*range >= self.right):
             return True
 
         return False
 
 
-    def same_level_box(self,box):
+    def same_level_box(self,box:'Box'):
         '''Check if two boxes are in the same level (horizontal and/or vertical)'''
         if self.within_horizontal_boxes(box) or self.within_vertical_boxes(box):
             return True
         return False
 
 
-    def is_inside_box(self,box):
+    def is_inside_box(self,box:'Box'):
         '''Check if box is inside container'''
         if self.left >= box.left and self.right <= box.right and self.top >= box.top and self.bottom <= box.bottom:
             return True
