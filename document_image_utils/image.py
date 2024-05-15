@@ -1,4 +1,6 @@
 import os
+import time
+from typing import Union
 import cv2
 from .box import *
 from scipy import ndimage
@@ -80,34 +82,51 @@ def create_vertical_aligned_pixel_set(pixels:list,image_shape:tuple,direction:st
     return pixel_set
 
 
-def calculate_rotation_direction(image_path:str,line_quantetization:int=200,crop_left:int=50,crop_right:int=0,crop_top:int=100,crop_bottom:int=100,debug:bool=False):
+def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quantetization:int=200,crop_left:int=0,crop_right:int=0,crop_top:int=0,crop_bottom:int=0,debug:bool=False):
     '''Calculate rotation direction (counter-clockwise or clockwise)
     
     On left margin of image compare the groups of ordered black pixels by x coordinate
     If the largest group is x descending (from top to bottom) the direction is clockwise, else counter-clockwise
     If largest group is of same x coordinate, the direction is none'''
-    test_path = image_path.split('/')[:-1]
-    test_path = '/'.join(test_path)
-    if not os.path.exists(f'{test_path}/test'):
-        os.mkdir(f'{test_path}/test')
-    test_path = f'{test_path}/test/{image_path.split("/")[-1]}'
 
-    direction = 'clockwise'
-    image = cv2.imread(image_path)
+    if isinstance(image,str):
+        image = cv2.imread(image)
+    else:
+        image = image
+
+    if not crop_left:
+        crop_left = round(image.shape[1]*0.05)
+    if not crop_right:
+        crop_right = round(image.shape[1]*0.05)
+    if not crop_top:
+        crop_top = round(image.shape[0]*0.05)
+    if not crop_bottom:
+        crop_bottom = round(image.shape[0]*0.05)
+
+
+    if debug:
+        test_path = '/'.join(image.split('/')[:-1]) if isinstance(image,str) else '.'
+        if not os.path.exists(f'{test_path}/test'):
+            os.mkdir(f'{test_path}/test')
+        test_img_name = image.split("/")[-1] if isinstance(image,str) else 'test'
+        test_path = f'{test_path}/test/{test_img_name}'
+
+    direction = 'None'
     # crop margin
     image = image[crop_top:image.shape[0]-crop_bottom,crop_left:image.shape[1]-crop_right]
     # grey scale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     # binarize, clean salt and pepper noise and dilate
     thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY_INV)[1]
-    filtered = ndimage.median_filter(thresh, 10)
-    dilation = cv2.dilate(filtered, np.ones((0,10),np.uint8),iterations=3)
+    filtered = cv2.medianBlur(thresh, 3)
+    dilation = cv2.dilate(filtered, np.ones((0,20),np.uint8),iterations=3)
     transformed_image = dilation
 
     if debug:
         cv2.imwrite(f'{test_path}_thresh.png',thresh)
         cv2.imwrite(f'{test_path}_filtered.png',filtered)
         cv2.imwrite(f'{test_path}_dilation.png',dilation)
+
 
     # calculate sets
     pixels = []
@@ -118,6 +137,7 @@ def calculate_rotation_direction(image_path:str,line_quantetization:int=200,crop
             if transformed_image[y][x] == 255:
                 pixels.append((x,y))
                 break
+
 
     if debug:
     # draw pixels
@@ -146,9 +166,11 @@ def calculate_rotation_direction(image_path:str,line_quantetization:int=200,crop
     biggest_counter_clockwise_set = max(counter_clockwise_sets, key=len)
     biggest_same_x_set = max(same_x_sets, key=len)
 
-    print('test','clockwise',len(biggest_clockwise_set))
-    print('counter_clockwise',len(biggest_counter_clockwise_set))
-    print('same_x',len(biggest_same_x_set))
+    if debug:
+        print('test','clockwise',len(biggest_clockwise_set))
+        print('counter_clockwise',len(biggest_counter_clockwise_set))
+        print('same_x',len(biggest_same_x_set))
+
     if debug:
         # draw biggest sets
         for pixel in biggest_clockwise_set:
@@ -296,7 +318,7 @@ def rotate_image_alt(image):
 
 
 
-def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop_left:int=50,crop_right:int=0,crop_top:int=100,crop_bottom:int=100,debug:bool=False):
+def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',crop_left:int=0,crop_right:int=0,crop_top:int=0,crop_bottom:int=0,debug:bool=False):
     '''Finds the angle of the image and rotates it
     
     Based on the study by: W. Bieniecki, Sz. Grabowski, W. Rozenberg 
@@ -320,10 +342,22 @@ def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop
         os.mkdir(f'{test_path}/test')
     test_path = f'{test_path}/test/{image.split("/")[-1]}'
     
-    img = cv2.imread(image)
+    og_img = cv2.imread(image)
+    if not line_quantetization:
+        line_quantetization = round(og_img.shape[0]*0.1)
+
+    if not crop_left:
+        crop_left = round(og_img.shape[1]*0.05)
+    if not crop_right:
+        crop_right = round(og_img.shape[1]*0.05)
+    if not crop_top:
+        crop_top = round(og_img.shape[0]*0.05)
+    if not crop_bottom:
+        crop_bottom = round(og_img.shape[0]*0.05)
+
     # crop margin
-    img = img[crop_top:img.shape[0] - crop_bottom, crop_left:img.shape[1] - crop_right]
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    cut_img = og_img[crop_top:og_img.shape[0] - crop_bottom, crop_left:og_img.shape[1] - crop_right]
+    gray_img = cv2.cvtColor(cut_img, cv2.COLOR_BGR2GRAY)
     binary_img = cv2.threshold(gray_img, 128, 255, cv2.THRESH_OTSU)
 
     # get first black pixel in each line of image
@@ -335,14 +369,17 @@ def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop
             if binary_img[1][y][x] == 0:
                 pixels.append((x,y))
                 break
-    
+
     # estimate rotation direction
     if direction == 'auto' or direction not in ['clockwise', 'counter_clockwise']:
-        direction = calculate_rotation_direction(image,crop_left,crop_right,crop_top,crop_bottom, debug=debug)
-    print('direction',direction)
+        direction = calculate_rotation_direction(og_img,crop_left=crop_left,crop_right=crop_right,crop_top=crop_top,crop_bottom=crop_bottom, debug=debug)
+
+    if debug:
+        print('direction',direction)
 
     if direction == 'none':
         return cv2.imread(image)
+
 
     # make list of sets
     # each set is a list of pixels in x coordinates order (ascending or descending depending on rotation direction)
@@ -359,16 +396,14 @@ def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop
             set = s
         elif len(s) > len(set):
             set = s
-
-    print('set',len(set))
-    og_img = cv2.imread(image)
-
+    if debug:
+        print('set',len(set))
 
 
     new_set = pixels_set_remove_outliers(set,direction)
 
     if len(new_set) < 2:
-        return img
+        return og_img
     
     # get extreme points
     left_most_point = new_set[0]
@@ -377,33 +412,38 @@ def rotate_image(image:str,line_quantetization:int=100,direction:str='auto',crop
     # find angle
     angle = math.degrees(math.atan((right_most_point[1] - left_most_point[1]) / (right_most_point[0] - left_most_point[0])))
 
-    print('angle',angle)
+    if debug:
+        print('angle',angle)
 
     rotation_angle = 90 - abs(angle)
     if direction == 'counter_clockwise':
         rotation_angle = -rotation_angle
-    img = ndimage.rotate(og_img, rotation_angle,reshape=True,cval=255)
+
+    h,w = og_img.shape[:2]
+    center = (w // 2, h // 2)
+    rotation_matrix = cv2.getRotationMatrix2D(center, rotation_angle, 1)
+    rotated_img = cv2.warpAffine(og_img, rotation_matrix, (w, h),borderValue=(255, 255, 255))
 
 
     ## test images
     if debug:
-        cv2.imwrite(test_path + '_rotated.png', img)
-
+        cv2.imwrite(test_path + '_rotated.png', rotated_img)
+        img = og_img
         # draw points from set
         for p in set:
-            cv2.circle(og_img, (p[0]+50, p[1]), 7, (255, 0, 0), -1)
+            cv2.circle(img, (p[0]+50, p[1]), 7, (255, 0, 0), -1)
 
-        cv2.imwrite(test_path + '_points_1.png', og_img)
+        cv2.imwrite(test_path + '_points_1.png', img)
 
-        og_img = cv2.imread(image)
+        img = og_img
 
         # draw points from set
         for p in new_set:
-            cv2.circle(og_img, (p[0]+50, p[1]), 7, (255, 0, 0), -1)
+            cv2.circle(img, (p[0]+50, p[1]), 7, (255, 0, 0), -1)
 
-        cv2.imwrite(test_path + '_points.png', og_img)
+        cv2.imwrite(test_path + '_points.png', img)
 
-    return img
+    return rotated_img
         
 
 
