@@ -767,7 +767,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
             pad = len(x_axis_freq_smooth) - binarized.shape[1]
             # fix padded margins
             if left_margin != 0:
-                left_margin = abs(pad-left_margin)
+                left_margin = int(abs(pad/2-left_margin))
 
             right_margin = abs(pad-right_margin)
 
