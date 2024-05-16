@@ -656,10 +656,11 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
     if x_axis_freq.any():
 
         # add 5% of length before and after
-        x_axis_freq = np.pad(x_axis_freq, (round(len(x_axis_freq)*0.01),round(len(x_axis_freq)*0.01)), 'edge')
+        x_axis_freq = np.append(np.zeros(int(len(x_axis_freq)*0.05)),x_axis_freq)
+        x_axis_freq = np.append(x_axis_freq,np.zeros(int(len(x_axis_freq)*0.05)))
 
         if method == 'WhittakerSmoother':
-            whittaker_smoother = WhittakerSmoother(lmbda=2e5, order=2, data_length = len(x_axis_freq))
+            whittaker_smoother = WhittakerSmoother(lmbda=2e4, order=2, data_length = len(x_axis_freq))
             x_axis_freq_smooth = whittaker_smoother.smooth(x_axis_freq)
         elif method == 'savgol_filter':
             x_axis_freq_smooth = savgol_filter(x_axis_freq, round(len(x_axis_freq)*0.1), 2)
