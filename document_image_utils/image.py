@@ -1,5 +1,5 @@
 import os
-import time
+import subprocess
 from typing import Union
 import cv2
 from .box import *
@@ -8,6 +8,8 @@ import numpy as np
 from scipy.signal import *
 from whittaker_eilers import WhittakerSmoother
 from matplotlib import pyplot as plt
+
+file_path = os.path.dirname(os.path.realpath(__file__))
 
 def get_concat_h(im1, im2,margin=0):
     '''Concatenate images horizontally'''
@@ -427,6 +429,15 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',cro
     rotation_matrix = cv2.getRotationMatrix2D(center, rotation_angle, 1)
     rotated_img = cv2.warpAffine(og_img, rotation_matrix, (w, h),borderValue=(255, 255, 255))
 
+    # do small adjustments using leptonica
+        # this method can't be used for adjusting more than a few degrees
+    # leptonica_adjust_rotation_path = f'{file_path}/leptonica_lib/adjust_rotate.exe'
+    # if os.path.exists(leptonica_adjust_rotation_path):
+    #     cv2.imwrite(f'{image}_tmp',rotated_img)
+    #     subprocess.run([f'{leptonica_adjust_rotation_path}', f'{image}_tmp', f'{image}_tmp'])
+    #     rotated_img = cv2.imread(f'{image}_tmp')
+    #     os.remove(f'{image}_tmp')
+
 
     ## test images
     if debug:
@@ -571,6 +582,41 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
 
 
 
+def descend_peak(signal:list, peak:int, direction:str='right')->int:
+    '''Descend peak of signal. Returns index of last point in descent'''
+    to_right = None
+    lowest_point = peak
+
+    if direction == 'right':
+        if peak <= len(signal) - 1:
+            if signal[peak] >= signal[peak + 1]:
+                to_right = True
+            elif peak > 0:
+                if signal[peak] >= signal[peak - 1]:
+                    to_right = False
+
+    elif direction == 'left':
+        if peak > 0:
+            if signal[peak] >= signal[peak - 1]:
+                to_right = False
+            elif peak <= len(signal) - 1:
+                if signal[peak] >= signal[peak + 1]:
+                    to_right = True
+
+    if to_right != None:
+        if to_right:
+            while lowest_point < len(signal) - 1:
+                if signal[lowest_point] < signal[lowest_point + 1]:
+                    break
+                lowest_point = lowest_point + 1
+        else:
+            while lowest_point > 0:
+                if signal[lowest_point] < signal[lowest_point - 1]:
+                    break
+                lowest_point = lowest_point - 1
+
+    return lowest_point
+
 
 def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='WhittakerSmoother', logs:bool=False)->Box:
     '''
@@ -609,8 +655,11 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
     if x_axis_freq.any():
 
+        # add 5% of length before and after
+        x_axis_freq = np.pad(x_axis_freq, (round(len(x_axis_freq)*0.01),round(len(x_axis_freq)*0.01)), 'edge')
+
         if method == 'WhittakerSmoother':
-            whittaker_smoother = WhittakerSmoother(lmbda=2e4, order=2, data_length = len(x_axis_freq))
+            whittaker_smoother = WhittakerSmoother(lmbda=2e5, order=2, data_length = len(x_axis_freq))
             x_axis_freq_smooth = whittaker_smoother.smooth(x_axis_freq)
         elif method == 'savgol_filter':
             x_axis_freq_smooth = savgol_filter(x_axis_freq, round(len(x_axis_freq)*0.1), 2)
@@ -665,14 +714,10 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
             max_freq = max(x_axis_freq_smooth)
             # check left margin
             if left_margin:
+                valid = False
 
                 # peak needs to be followed by a drop to less than 10% of max frequency
-                last_point = left_margin
-                i = last_point + 1
-                while i <= len(x_axis_freq_smooth)*0.1 and x_axis_freq_smooth[i] < x_axis_freq_smooth[last_point] :
-                    last_point = i
-                    i += 1
-
+                last_point = descend_peak(x_axis_freq_smooth,left_margin,'right')
 
                 if logs:
                     print('lowest point',last_point)
@@ -680,20 +725,25 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
                 if x_axis_freq_smooth[last_point] <= max_freq*0.1:
                     left_margin = last_point
-                else:
-                    left_margin = 0
+                    valid = True
+
+                if not valid:
+                    last_point = descend_peak(x_axis_freq_smooth,left_margin,'left')
+
+                    if x_axis_freq_smooth[last_point] <= max_freq*0.1:
+                        left_margin = last_point
+                    else:
+                        left_margin = 0
+
             else: 
                 left_margin = 0
 
             # check right margin
             if right_margin:
+                valid = False
 
                 # peak needs to be preceded by a drop to less than 10% of max frequency
-                last_point = right_margin
-                i = last_point - 1
-                while i >= len(x_axis_freq_smooth)*0.9 and x_axis_freq_smooth[i] < x_axis_freq_smooth[last_point] :
-                    last_point = i
-                    i -= 1
+                last_point = descend_peak(x_axis_freq_smooth,right_margin,'left')
 
                 if logs:
                     print('lowest point',last_point)
@@ -701,10 +751,25 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
                 if x_axis_freq_smooth[last_point] <= max_freq*0.1:
                     right_margin = last_point
-                else:
-                    right_margin = len(x_axis_freq_smooth)
+
+                if not valid:
+                    last_point = descend_peak(x_axis_freq_smooth,right_margin,'right')
+
+                    if x_axis_freq_smooth[last_point] <= max_freq*0.1:
+                        right_margin = last_point
+                    else:
+                        right_margin = len(x_axis_freq_smooth)
+
             else: 
                 right_margin = len(x_axis_freq_smooth)
+
+            pad = len(x_axis_freq_smooth) - binarized.shape[1]
+            # fix padded margins
+            if left_margin != 0:
+                left_margin = abs(pad-left_margin)
+
+            right_margin = abs(pad-right_margin)
+
 
             if logs:
                 print('Left margin',left_margin)
@@ -726,3 +791,17 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
     return cut_document
 
+
+def binarize(image,logs=False)->np.ndarray:
+    '''Binarize image to black and white'''
+
+    if isinstance(image,str):
+        img = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+    
+    # denoise
+    img = cv2.fastNlMeansDenoising(img,None,10,7,21)
+
+    # binarize
+    img = cv2.threshold(img, 0, 255,cv2.THRESH_BINARY_INV+ cv2.THRESH_OTSU)[1]
+
+    return img
