@@ -82,7 +82,7 @@ def create_vertical_aligned_pixel_set(pixels:list,image_shape:tuple,direction:st
     return pixel_set
 
 
-def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quantetization:int=200,crop_left:int=0,crop_right:int=0,crop_top:int=0,crop_bottom:int=0,debug:bool=False):
+def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quantetization:int=200,crop_left:int=None,crop_right:int=None,crop_top:int=None,crop_bottom:int=None,debug:bool=False):
     '''Calculate rotation direction (counter-clockwise or clockwise)
     
     On left margin of image compare the groups of ordered black pixels by x coordinate
@@ -91,17 +91,15 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
 
     if isinstance(image,str):
         image = cv2.imread(image)
-    else:
-        image = image
 
-    if not crop_left:
-        crop_left = round(image.shape[1]*0.05)
-    if not crop_right:
-        crop_right = round(image.shape[1]*0.05)
-    if not crop_top:
-        crop_top = round(image.shape[0]*0.05)
-    if not crop_bottom:
-        crop_bottom = round(image.shape[0]*0.05)
+    if crop_left is None:
+        crop_left = round(image.shape[1]*0.01)
+    if crop_right is None:
+        crop_right = round(image.shape[1]*0.01)
+    if crop_top is None:
+        crop_top = round(image.shape[0]*0.01)
+    if crop_bottom is None:
+        crop_bottom = round(image.shape[0]*0.01)
 
 
     if debug:
@@ -318,7 +316,7 @@ def rotate_image_alt(image):
 
 
 
-def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',crop_left:int=0,crop_right:int=0,crop_top:int=0,crop_bottom:int=0,debug:bool=False):
+def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',crop_left:int=None,crop_right:int=None,crop_top:int=None,crop_bottom:int=None,auto_crop:bool=False,debug:bool=False):
     '''Finds the angle of the image and rotates it
     
     Based on the study by: W. Bieniecki, Sz. Grabowski, W. Rozenberg 
@@ -346,17 +344,22 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',cro
     if not line_quantetization:
         line_quantetization = round(og_img.shape[0]*0.1)
 
-    if not crop_left:
-        crop_left = round(og_img.shape[1]*0.05)
-    if not crop_right:
-        crop_right = round(og_img.shape[1]*0.05)
-    if not crop_top:
-        crop_top = round(og_img.shape[0]*0.05)
-    if not crop_bottom:
-        crop_bottom = round(og_img.shape[0]*0.05)
+    if not auto_crop:
+        if crop_left is None:
+            crop_left = round(og_img.shape[1]*0.01)
+        if crop_right is None:
+            crop_right = round(og_img.shape[1]*0.01)
+        if crop_top is None:
+            crop_top = round(og_img.shape[0]*0.01)
+        if crop_bottom is None:
+            crop_bottom = round(og_img.shape[0]*0.01)
 
-    # crop margin
-    cut_img = og_img[crop_top:og_img.shape[0] - crop_bottom, crop_left:og_img.shape[1] - crop_right]
+        # crop margin
+        cut_img = og_img[crop_top:og_img.shape[0] - crop_bottom, crop_left:og_img.shape[1] - crop_right]
+    else:
+        cropped = cut_document_margins(og_img)
+        cut_img = og_img[cropped.top:cropped.bottom, cropped.left:cropped.right]
+
     gray_img = cv2.cvtColor(cut_img, cv2.COLOR_BGR2GRAY)
     binary_img = cv2.threshold(gray_img, 128, 255, cv2.THRESH_OTSU)
 
@@ -372,7 +375,7 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',cro
 
     # estimate rotation direction
     if direction == 'auto' or direction not in ['clockwise', 'counter_clockwise']:
-        direction = calculate_rotation_direction(og_img,crop_left=crop_left,crop_right=crop_right,crop_top=crop_top,crop_bottom=crop_bottom, debug=debug)
+        direction = calculate_rotation_direction(cut_img, debug=debug)
 
     if debug:
         print('direction',direction)
@@ -569,7 +572,7 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
 
 
 
-def cut_document_margins(image_path:str, method:str='WhittakerSmoother', logs:bool=False)->Box:
+def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='WhittakerSmoother', logs:bool=False)->Box:
     '''
     Cut document margins by analysing pixel frequency.
     
@@ -581,11 +584,14 @@ def cut_document_margins(image_path:str, method:str='WhittakerSmoother', logs:bo
     if method not in methods:
         method = 'WhittakerSmoother'
 
-    if not os.path.exists(image_path):
-        print('Image not found')
-        return cut_document
+    if type(image) == str:
+        if not os.path.exists(image):
+            print('Image not found')
+            return cut_document
 
-    image = cv2.imread(image_path)
+        image = cv2.imread(image)
+
+
     cut_document = Box({'left':0,'right':image.shape[1],'top':0,'bottom':image.shape[0]})
 
     # black and white
