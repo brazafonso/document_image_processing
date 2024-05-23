@@ -377,7 +377,7 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',cro
 
     # estimate rotation direction
     if direction == 'auto' or direction not in ['clockwise', 'counter_clockwise']:
-        direction = calculate_rotation_direction(cut_img, debug=debug)
+        direction = calculate_rotation_direction(cut_img.copy(), debug=debug)
 
     if debug:
         print('direction',direction)
@@ -637,6 +637,9 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
         image = cv2.imread(image)
 
+    if logs:
+        print('Image shape',image.shape)
+
 
     cut_document = Box({'left':0,'right':image.shape[1],'top':0,'bottom':image.shape[0]})
 
@@ -658,6 +661,10 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
         # add 5% of length before and after
         x_axis_freq = np.append(np.zeros(int(len(x_axis_freq)*0.05)),x_axis_freq)
         x_axis_freq = np.append(x_axis_freq,np.zeros(int(len(x_axis_freq)*0.05)))
+
+        pad = len(x_axis_freq) - binarized.shape[1]
+        if logs:
+            print('pad',pad)
 
         if method == 'WhittakerSmoother':
             whittaker_smoother = WhittakerSmoother(lmbda=2e4, order=2, data_length = len(x_axis_freq))
@@ -704,9 +711,9 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
         if peaks.any():
 
             # get left and right margins potential peaks
-                # they need to be between out of the 10% to 90% range of the x axis of the image
-            left_margin = peaks[0] if peaks[0] <= len(x_axis_freq_smooth)*0.1 else None
-            right_margin = None if len(peaks) == 1 else peaks[-1] if peaks[-1] >= len(x_axis_freq_smooth)*0.9 else None
+                # they need to be between out of the 10% to 90% range of the x axis of the image (20% and 80% respectively in the padded frequency array)
+            left_margin = peaks[0] if peaks[0] <= len(x_axis_freq_smooth)*0.2 else None
+            right_margin = None if len(peaks) == 1 else peaks[-1] if peaks[-1] >= len(x_axis_freq_smooth)*0.8 else None
 
             if logs:
                 print('left margin',left_margin)
@@ -721,7 +728,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
                 last_point = descend_peak(x_axis_freq_smooth,left_margin,'right')
 
                 if logs:
-                    print('lowest point',last_point)
+                    print('Left - lowest point:',last_point)
                     print(x_axis_freq_smooth[last_point])
 
                 if x_axis_freq_smooth[last_point] <= max_freq*0.1:
@@ -747,7 +754,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
                 last_point = descend_peak(x_axis_freq_smooth,right_margin,'left')
 
                 if logs:
-                    print('lowest point',last_point)
+                    print('Right - lowest point:',last_point)
                     print(x_axis_freq_smooth[last_point])
 
                 if x_axis_freq_smooth[last_point] <= max_freq*0.1:
@@ -764,12 +771,16 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
             else: 
                 right_margin = len(x_axis_freq_smooth)
 
-            pad = len(x_axis_freq_smooth) - binarized.shape[1]
-            # fix padded margins
+            # adjust margins to remove padding
+            ## remove pad from left side
             if left_margin != 0:
                 left_margin = int(abs(pad/2-left_margin))
 
-            right_margin = abs(pad-right_margin)
+            ## remove pad from right side if right margin is within right padded zone
+            if right_margin > len(x_axis_freq_smooth) - pad/2:
+                right_margin -= right_margin-(len(x_axis_freq_smooth) - pad/2)
+            
+            right_margin = int(right_margin-pad/2)
 
 
             if logs:
@@ -793,14 +804,14 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
     return cut_document
 
 
-def binarize(image,logs=False)->np.ndarray:
+def binarize(image,denoise_strength:int=10,logs=False)->np.ndarray:
     '''Binarize image to black and white'''
 
     if isinstance(image,str):
         img = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
     
     # denoise
-    img = cv2.fastNlMeansDenoising(img,None,10,7,21)
+    img = cv2.fastNlMeansDenoising(img,None,denoise_strength,7,21)
 
     # binarize
     img = cv2.threshold(img, 0, 255,cv2.THRESH_BINARY_INV+ cv2.THRESH_OTSU)[1]
