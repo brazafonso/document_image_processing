@@ -19,12 +19,18 @@ def get_concat_h(im1, im2,margin=0):
     return dst
 
 
-def split_page_columns(image_path,columns):
+def split_page_columns(image_path:str,columns:Union[list[Box],None]=None,
+                       method:str='WhittakerSmoother',logs:bool=False)->list[cv2.typing.MatLike]:
     '''Split image into columns images'''
     image = cv2.imread(image_path)
     columns_image = []
+
+    # if no columns are given, divide columns
+    if not columns:
+        columns = divide_columns(image_path,method=method,logs=logs)
+
     for column in columns:
-        columns_image.append(image[column[0][1]:column[1][1],column[0][0]:column[1][0]])
+        columns_image.append(image[column.top:column.bottom,column.left:column.right])
     return columns_image
 
 
@@ -318,7 +324,9 @@ def rotate_image_alt(image):
 
 
 
-def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',crop_left:int=None,crop_right:int=None,crop_top:int=None,crop_bottom:int=None,auto_crop:bool=False,debug:bool=False):
+def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',
+                 crop_left:int=None,crop_right:int=None,crop_top:int=None,crop_bottom:int=None,auto_crop:bool=False,
+                 debug:bool=False)->cv2.typing.MatLike:
     '''Finds the angle of the image and rotates it
     
     Based on the study by: W. Bieniecki, Sz. Grabowski, W. Rozenberg 
@@ -481,8 +489,14 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
         return columns
 
     image = cv2.imread(image_path)
+    original_height = image.shape[0] # height of original image (for columns dimensions)
+
+
+    # auto crop margins
+    image_crop = cut_document_margins(image=image,method='WhittakerSmoother')
+    image = image[image_crop.top:image_crop.bottom,image_crop.left:image_crop.right]
     # cut possible header and footer (cut 30% from top and 10% from bottom)
-    image = image[round(image.shape[0]*0.3):round(image.shape[0]*0.9)]
+    image = image[round(image.shape[0]*0.3):image.shape[0]-round(image.shape[0]*0.1),:]
 
     # black and white
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -493,10 +507,10 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
     # binarize
     binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
-    # get frequency of white pixels per column
+    # get frequency of white pixels per x axis
     x_axis_freq = np.zeros(binarized.shape[1])
 
-    # count when column neighbours (above,bellow and right) are also white
+    ## count when pixel neighbours (above,bellow and right) are also white
     mask = np.logical_and(
         np.logical_and(binarized[1:,:-1] == 255, binarized[:-1,:-1] == 255),
         binarized[:-1,1:] == 255
@@ -509,6 +523,7 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
         max_freq = max(x_axis_freq)
         x_axis_freq = np.array([max_freq - i for i in x_axis_freq])
 
+        # smoothen frequencies
         if method == 'WhittakerSmoother':
             whittaker_smoother = WhittakerSmoother(lmbda=2e4, order=2, data_length = len(x_axis_freq))
             x_axis_freq_smooth = whittaker_smoother.smooth(x_axis_freq)
@@ -551,7 +566,6 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
             print('Peaks',peaks)
 
         # estimate columns
-        ## for each two peaks, decide if possible column, if middle frequencies are mostly above average
         potential_columns = []
         next_column = [0,None]
         for i in range(len(peaks)):
@@ -569,12 +583,13 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
             next_column[1] = len(x_axis_freq_smooth)
             potential_columns.append(next_column)
 
+        fix_pad = image_crop.left
         # create columns
         if potential_columns:
             if logs:
                 print('potential columns',potential_columns)
             for column in potential_columns:
-                c = Box({'left':column[0],'right':column[1],'top':0,'bottom':binarized.shape[0]})
+                c = Box({'left':column[0] + fix_pad,'right':column[1] + fix_pad,'top':0,'bottom':original_height})
                 columns.append(c)
         
 
@@ -805,11 +820,33 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
 
 def binarize(image,denoise_strength:int=10,logs=False)->np.ndarray:
-    '''Binarize image to black and white'''
+    '''Binarize image to black and white. 
+
+    Parameters
+    ----------
+    image : Union[str,cv2.typing.MatLike]
+        Image to binarize
+    denoise_strength : int, optional
+        Strength of denoise, by default 10. If 'auto', calculates SNR of image and chooses the best denoise strength (WIP).
+    logs : bool, optional
+        Print logs, by default False'''
 
     if isinstance(image,str):
         img = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
-    
+
+    # determine denoise strength
+    ## calculates SNR of image and chooses the best denoise strength
+    if denoise_strength == 'auto':
+        image_std = np.std(img)
+        image_mean = np.mean(img)
+        image_snr = image_mean/image_std
+        denoise_strength = int(image_snr)
+    elif denoise_strength is None:
+        denoise_strength = 10
+
+    if logs:
+        print('Auto denoise strength:',denoise_strength)
+
     # denoise
     img = cv2.fastNlMeansDenoising(img,None,denoise_strength,7,21)
 

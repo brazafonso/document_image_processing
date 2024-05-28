@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "document_image_utils"
-version = "0.1.12.7"
+version = "0.1.13.0"
 description = "Toolkit for document image processing"
 authors = ["Gonçalo Afonso <brazafonso2001@gmail.com>"]
 readme = "README.md"
@@ -19,3 +19,9 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.2.2"
+
+[tool.poetry.scripts]
+rotate_document = "document_image_utils.scripts.rotate_document:main"
+auto_crop = "document_image_utils.scripts.auto_crop:main"
+binarize = "document_image_utils.scripts.binarize:main"
+split_columns = "document_image_utils.scripts.split_columns:main"
