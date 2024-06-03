@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from typing import Union
 import cv2
@@ -819,7 +820,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
     return cut_document
 
 
-def binarize(image,denoise_strength:int=10,logs=False)->np.ndarray:
+def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:bool=False,logs:bool=False)->np.ndarray:
     '''Binarize image to black and white. 
 
     Parameters
@@ -851,6 +852,92 @@ def binarize(image,denoise_strength:int=10,logs=False)->np.ndarray:
     img = cv2.fastNlMeansDenoising(img,None,denoise_strength,7,21)
 
     # binarize
-    img = cv2.threshold(img, 0, 255,cv2.THRESH_BINARY_INV+ cv2.THRESH_OTSU)[1]
+    type = cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    if invert:
+        type = cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+    img = cv2.threshold(img, 0, 255,type)[1]
 
     return img
+
+
+def canny_edge_detection(image:cv2.typing.MatLike): 
+    # Convert the frame to grayscale for edge detection 
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) 
+      
+    # Apply Gaussian blur to reduce noise and smoothen edges 
+    blurred = cv2.GaussianBlur(src=gray, ksize=(3, 5), sigmaX=0.5) 
+      
+    # Perform Canny edge detection 
+    edges = cv2.Canny(blurred, 70, 135) 
+      
+    return blurred, edges
+
+def draw_countours(image:Union[str,cv2.typing.MatLike]):
+    '''Draw contours on image'''
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    _, edges = canny_edge_detection(image)
+
+    return edges
+
+
+def identify_document_images(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False)->list[Box]:
+    '''Identify document images in image. Uses leptonica's page segmentation function to identify document images.
+
+    Parameters
+    ----------
+    image : Union[str,cv2.typing.MatLike]
+        Image to identify document images
+    logs : bool, optional
+        Print logs, by default False
+    Returns
+    -------
+    List[Box]
+        List of boxes with document images'''
+    
+    if tmp_dir is None:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    # binarize image and save to 1bpp format
+    binarized = binarize(image,logs=logs)
+
+    tmp_file = f'{tmp_dir}/tmp_binarized.png'
+    cv2.imwrite(tmp_file,binarized,params=[cv2.IMWRITE_PNG_BILEVEL, 1])
+
+    # run leptonica script
+    if logs:
+        print('Running page segmentation using leptonica.')
+
+    os.system(f'{file_path}/leptonica_lib/segment_doc {tmp_file} {tmp_dir}')
+
+    # read leptonica output
+    leptonica_output_path = f'{tmp_dir}'
+    image_boxes_output_path = f'{leptonica_output_path}/htmask.boxa'
+    if not os.path.exists(image_boxes_output_path):
+        return []
+    
+    image_boxes = open(image_boxes_output_path,'r',encoding='utf-8').readlines()
+
+    # parse leptonica output
+    boxes = []
+    for line in image_boxes:
+        box_pattern = r'Box\[\d+\]:\s+x = (\d+),\s+y = (\d+),\s+w = (\d+),\s+h = (\d+)'
+        if not re.search(box_pattern,line):
+            continue
+
+        match = re.search(box_pattern,line)
+        x = int(match.group(1))
+        y = int(match.group(2))
+        w = int(match.group(3))
+        h = int(match.group(4))
+
+        boxes.append(Box(x,x+w,y,y+h))
+
+    # remove tmp files
+    os.remove(tmp_file)
+
+    return boxes

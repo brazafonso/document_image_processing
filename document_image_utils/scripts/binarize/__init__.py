@@ -3,6 +3,7 @@
 import argparse
 import os
 import cv2
+import numpy as np
 from document_image_utils.image import binarize
 from document_image_utils.box import Box
 
@@ -12,6 +13,7 @@ def process_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('image',                            type=str,                                   help='Image to rotate.')
     parser.add_argument('-ds', '--denoise_strength',        type=int, default=None,                     help='Denoise strength. If auto, calculates SNR of image and chooses the best denoise strength.')
+    parser.add_argument('-1bpp', '--one_bit_per_pixel',     action='store_true',                        help='Convert to one bit per pixel.')
     parser.add_argument('-o','--output',                    type=str, default=None,                     help='Output path.')
     parser.add_argument('-l', '--logs',                             action='store_false',               help='Print logs.')
     parser.add_argument('--debug',                                  action='store_true',                help='Debug mode.')
@@ -47,6 +49,10 @@ def main():
     if args.logs:
         print(f'Output: {output_path}')
 
-    cv2.imwrite(output_path,binarized_image)
+    params = []
+    if args.one_bit_per_pixel:
+        params = [cv2.IMWRITE_PNG_BILEVEL, 1]
+
+    cv2.imwrite(output_path,binarized_image,params=params)
     
     
