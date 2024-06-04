@@ -1,6 +1,5 @@
 import os
 import re
-import subprocess
 from typing import Union
 import cv2
 from .box import *
@@ -325,7 +324,7 @@ def rotate_image_alt(image):
 
 
 
-def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',
+def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=None,direction:str='auto',
                  crop_left:int=None,crop_right:int=None,crop_top:int=None,crop_bottom:int=None,auto_crop:bool=False,
                  debug:bool=False)->cv2.typing.MatLike:
     '''Finds the angle of the image and rotates it
@@ -345,13 +344,23 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',
     8. Rotate image
     '''
 
-    test_path = image.split('/')[:-1]
-    test_path = '/'.join(test_path)
+    test_path = os.getcwd()
     if not os.path.exists(f'{test_path}/test'):
         os.mkdir(f'{test_path}/test')
-    test_path = f'{test_path}/test/{image.split("/")[-1]}'
+    test_path = f'{test_path}/test/test.png'
     
-    og_img = cv2.imread(image)
+    if isinstance(image,str):
+        og_img = cv2.imread(image)
+    else:
+        og_img = image
+
+    # check if image is laied
+    ## width > height
+    ## rotate 90 degrees
+    if og_img.shape[0] < og_img.shape[1]:
+        og_img = cv2.rotate(og_img, cv2.ROTATE_90_CLOCKWISE)
+
+
     if not line_quantetization:
         line_quantetization = round(og_img.shape[0]*0.1)
 
@@ -392,7 +401,7 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',
         print('direction',direction)
 
     if direction == 'none':
-        return cv2.imread(image)
+        return og_img
 
 
     # make list of sets
@@ -439,13 +448,13 @@ def rotate_image(image:str,line_quantetization:int=None,direction:str='auto',
     rotated_img = cv2.warpAffine(og_img, rotation_matrix, (w, h),borderValue=(255, 255, 255))
 
     # do small adjustments using leptonica
-        # this method can't be used for adjusting more than a few degrees
-    # leptonica_adjust_rotation_path = f'{file_path}/leptonica_lib/adjust_rotate.exe'
-    # if os.path.exists(leptonica_adjust_rotation_path):
-    #     cv2.imwrite(f'{image}_tmp',rotated_img)
-    #     subprocess.run([f'{leptonica_adjust_rotation_path}', f'{image}_tmp', f'{image}_tmp'])
-    #     rotated_img = cv2.imread(f'{image}_tmp')
-    #     os.remove(f'{image}_tmp')
+    #     this method can't be used for adjusting more than a few degrees
+    leptonica_adjust_rotation_path = f'{file_path}/leptonica_lib/adjust_rotation'
+    if os.path.exists(leptonica_adjust_rotation_path):
+        cv2.imwrite(f'leptonica_tmp.png',rotated_img)
+        os.system(f'{leptonica_adjust_rotation_path} leptonica_tmp.png leptonica_tmp.png')
+        rotated_img = cv2.imread(f'leptonica_tmp.png')
+        os.remove(f'leptonica_tmp.png')
 
 
     ## test images
