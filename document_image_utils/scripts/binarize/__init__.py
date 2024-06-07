@@ -14,6 +14,7 @@ def process_args():
     parser.add_argument('image',                            type=str,                                   help='Image to rotate.')
     parser.add_argument('-ds', '--denoise_strength',        type=int, default=None,                     help='Denoise strength. If auto, calculates SNR of image and chooses the best denoise strength.')
     parser.add_argument('-1bpp', '--one_bit_per_pixel',     action='store_true',                        help='Convert to one bit per pixel.')
+    parser.add_argument('-i','--invert',                    action='store_true',                        help='Invert image binarization (black background and white text).')
     parser.add_argument('-o','--output',                    type=str, default=None,                     help='Output path.')
     parser.add_argument('-l', '--logs',                             action='store_false',               help='Print logs.')
     parser.add_argument('--debug',                                  action='store_true',                help='Debug mode.')
@@ -37,6 +38,7 @@ def main():
 
     binarized_image = binarize(image=image_path,
                                 denoise_strength=args.denoise_strength,
+                                invert=args.invert,
                                 logs=args.debug)
 
 

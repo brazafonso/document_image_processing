@@ -3,3 +3,7 @@ dist
 teste.py
 test
 *.pyc
+*.png
+*.tif
+*.jpg
+tmp

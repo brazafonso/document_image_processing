@@ -682,6 +682,8 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
     x_axis_freq = np.add.reduce(binarized, axis=0)
 
     if x_axis_freq.any():
+        max_freq = max(x_axis_freq)
+        x_axis_freq = np.array([max_freq - i for i in x_axis_freq])
 
         # add 5% of length before and after
         x_axis_freq = np.append(np.zeros(int(len(x_axis_freq)*0.05)),x_axis_freq)
@@ -842,13 +844,18 @@ def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:
         Print logs, by default False'''
 
     if isinstance(image,str):
-        img = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+        image = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+    else:
+        # check if image is grayscale
+        if len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
 
     # determine denoise strength
     ## calculates SNR of image and chooses the best denoise strength
     if denoise_strength == 'auto':
-        image_std = np.std(img)
-        image_mean = np.mean(img)
+        image_std = np.std(image)
+        image_mean = np.mean(image)
         image_snr = image_mean/image_std
         denoise_strength = int(image_snr)
     elif denoise_strength is None:
@@ -858,15 +865,15 @@ def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:
         print('Auto denoise strength:',denoise_strength)
 
     # denoise
-    img = cv2.fastNlMeansDenoising(img,None,denoise_strength,7,21)
+    image = cv2.fastNlMeansDenoising(image,None,denoise_strength,7,21)
 
     # binarize
     type = cv2.THRESH_BINARY + cv2.THRESH_OTSU
     if invert:
         type = cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-    img = cv2.threshold(img, 0, 255,type)[1]
+    image = cv2.threshold(image, 0, 255,type)[1]
 
-    return img
+    return image
 
 
 def canny_edge_detection(image:cv2.typing.MatLike): 
@@ -950,3 +957,232 @@ def identify_document_images(image:Union[str,cv2.typing.MatLike],tmp_dir:str=Non
     os.remove(tmp_file)
 
     return boxes
+
+def remove_document_images(image:Union[str,cv2.typing.MatLike],doc_images:list[Box]=None,tmp_dir:str=None,logs:bool=False):
+    '''Remove document images in image'''
+
+    if tmp_dir is None:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    if not doc_images:
+        # identify document images
+        doc_images = identify_document_images(image,tmp_dir=tmp_dir,logs=logs)
+
+    average_color = [int(np.average(image[:,:,i])) for i in range(3)]
+    # remove document images
+    for box in doc_images:
+        x = box.left
+        y = box.top
+        w = box.width
+        h = box.height
+
+        image[y:y+h,x:x+w] = average_color
+
+    return image
+
+
+def segment_document_elements(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False)->tuple[list[Box],list[Box]]:
+    '''Segment document into text and image bounding boxes using leptonica'''
+
+    images_bb = []
+    text_bbs = []
+
+    if tmp_dir is None:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    # binarize image and save to 1bpp format
+    binarized = binarize(image,logs=logs)
+
+    tmp_file = f'{tmp_dir}/tmp_binarized.png'
+    cv2.imwrite(tmp_file,binarized,params=[cv2.IMWRITE_PNG_BILEVEL, 1])
+
+    # run leptonica script
+    if logs:
+        print('Running page segmentation using leptonica.')
+
+    os.system(f'{file_path}/leptonica_lib/segment_doc {tmp_file} {tmp_dir}')
+
+    # read leptonica output
+    leptonica_output_path = f'{tmp_dir}'
+    image_boxes_output_path = f'{leptonica_output_path}/htmask.boxa'
+    text_boxes_output_path = f'{leptonica_output_path}/textmask.boxa'
+
+    # read image boxes output
+    if os.path.exists(image_boxes_output_path):
+        image_boxes = open(image_boxes_output_path,'r',encoding='utf-8').readlines()
+
+        # parse leptonica output
+        
+        for line in image_boxes:
+            box_pattern = r'Box\[\d+\]:\s+x = (\d+),\s+y = (\d+),\s+w = (\d+),\s+h = (\d+)'
+            if not re.search(box_pattern,line):
+                continue
+
+            match = re.search(box_pattern,line)
+            x = int(match.group(1))
+            y = int(match.group(2))
+            w = int(match.group(3))
+            h = int(match.group(4))
+
+            images_bb.append(Box(x,x+w,y,y+h))
+
+    # read text boxes output
+    if os.path.exists(text_boxes_output_path):
+        text_boxes = open(text_boxes_output_path,'r',encoding='utf-8').readlines()
+
+        # parse leptonica output
+        for line in text_boxes:
+            box_pattern = r'Box\[\d+\]:\s+x = (\d+),\s+y = (\d+),\s+w = (\d+),\s+h = (\d+)'
+            if not re.search(box_pattern,line):
+                continue
+
+            match = re.search(box_pattern,line)
+            x = int(match.group(1))
+            y = int(match.group(2))
+            w = int(match.group(3))
+            h = int(match.group(4))
+
+            text_bbs.append(Box(x,x+w,y,y+h))
+
+    return text_bbs,images_bb
+
+    
+
+
+
+def get_document_delimeters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False,debug:bool=False)->list[Box]:
+    '''Get document delimiters in image using Hough lines'''
+
+    if tmp_dir is None:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    # remove document images
+    image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs)
+
+    # binarize image and get edges
+    binarized = binarize(image,logs=logs)
+    edges = cv2.Canny(binarized,50,200,None,3)
+
+    # dilate edges
+    kernel = np.ones((3,3),np.uint8)
+    edges = cv2.dilate(edges,kernel,iterations = 1)
+
+    # get hough lines
+    lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None, 50,10)
+
+    # get delimeters
+    delimeters = []
+    for line in lines:
+        l = line[0]
+
+        x0 = l[0]
+        y0 = l[1]
+        x1 = l[2]
+        y1 = l[3]
+
+        t5 = math.tan(5*math.pi/180)
+        t60 = math.sqrt(3)/2
+        dx = x1 - x0
+        dy = y1 - y0
+        is_vertical = dy != 0 and abs(dx/dy) < t5
+        is_horizontal = dx != 0 and abs(dy/dx) < t60
+        if not is_vertical and not is_horizontal:
+            if debug:
+                print(f'Line {l} is not horizontal or vertical.')
+            continue
+        
+        # ignore if line is too short
+        length = math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
+        if length >= 0.1*image.shape[1]:
+            left = min(x0,x1)
+            right = max(x0,x1)
+            top = min(y0,y1)
+            bottom = max(y0,y1)
+
+            delimeter = Box(left,right,top,bottom)
+            delimeters.append(delimeter)
+
+    if logs:
+        print(f'Delimeters: {delimeters}')
+
+    return delimeters
+
+
+
+def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False,debug:bool=False)->tuple[Box,Box,Box]:
+    '''Segment document into header, body and footer using delimiters'''
+    header = None
+    body = None
+    footer = None
+
+    if tmp_dir is None:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    delimiters = get_document_delimeters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
+
+    # find header delimiter
+    ## has to be in the upper 30% of the image, horizontal and ith a lenght of at least 40% of the image
+    potential_header_delimiters = []
+    for delimiter in delimiters:
+        
+        if delimiter.get_box_orientation() == 'horizontal' and delimiter.height <= 0.3*image.shape[0] and delimiter.width >= 0.4*image.shape[1]:
+            potential_header_delimiters.append(delimiter)
+
+    if len(potential_header_delimiters) > 0:
+        # sort delimiters by y position (lower is better)
+        potential_header_delimiters.sort(key=lambda x: x.top)
+        header = potential_header_delimiters[0]
+
+
+    # find footer delimiter
+    ## has to be in the lower 30% of the image, horizontal and ith a lenght of at least 40% of the image
+    potential_footer_delimiters = []
+    for delimiter in delimiters:
+        
+        if delimiter.get_box_orientation() == 'horizontal' and delimiter.height >= 0.7*image.shape[0] and delimiter.width >= 0.4*image.shape[1]:
+            potential_footer_delimiters.append(delimiter)
+
+    if len(potential_footer_delimiters) > 0:
+        # sort delimiters by y position (higher is better)
+        potential_footer_delimiters.sort(key=lambda x: x.top,reverse=True)
+        footer = potential_footer_delimiters[0]
+
+    # create bboxes for header, body and footer
+    ## default body (whole image)
+    body = Box(0,image.shape[1],0,image.shape[0])
+    if header is not None:
+        header = Box(0,image.shape[1],0,header.bottom)
+    else:
+        header = Box(0,0,0,0)
+
+    if footer is not None:
+        footer = Box(0,image.shape[1],footer.top,image.shape[0])
+    else:
+        footer = Box(0,0,0,0)
+
+    ## remove heade and footer from body
+    body.remove_box_area(header)
+    body.remove_box_area(footer)
+
+
+    return [header,body,footer]
+
+

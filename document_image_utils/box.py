@@ -329,3 +329,5 @@ class Box:
     def right_middle_point(self):
         '''Get right middle point of box'''
         return (self.right,self.top+self.height/2)
+    
+
