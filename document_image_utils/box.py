@@ -305,6 +305,30 @@ class Box:
             elif border == 'bottom':
                 self_point = self.bottom_middle_point()
                 box_point = box.top_middle_point()
+        # search for closest distance
+        ## simple naive approach
+        elif border == 'closest':
+            distance = None
+            vertical_distance = None
+            if self.within_horizontal_boxes(box):
+                if self.bottom < box.top:
+                    vertical_distance = abs(self.bottom - box.top)
+                else:
+                    vertical_distance = abs(self.center_point()[1] - box.center_point()[1])
+                    
+            horizontal_distance = None
+            if self.within_vertical_boxes(box):
+                if self.right < box.left:
+                    horizontal_distance = abs(self.right - box.left)
+                else:
+                    horizontal_distance = abs(self.center_point()[0] - box.center_point()[0])
+
+            distance = min(vertical_distance,horizontal_distance) if vertical_distance and horizontal_distance else [v for v in [vertical_distance,horizontal_distance] if v][0] if any([vertical_distance,horizontal_distance]) else None
+            if distance:
+                return distance
+            else:
+                self_point = self.center_point()
+                box_point = box.center_point()
         else:
             self_point = self.center_point()
             box_point = box.center_point()

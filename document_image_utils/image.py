@@ -961,6 +961,9 @@ def identify_document_images(image:Union[str,cv2.typing.MatLike],tmp_dir:str=Non
 def remove_document_images(image:Union[str,cv2.typing.MatLike],doc_images:list[Box]=None,tmp_dir:str=None,logs:bool=False):
     '''Remove document images in image'''
 
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
     if tmp_dir is None:
         tmp_dir = f'{file_path}/tmp'
 
@@ -985,7 +988,17 @@ def remove_document_images(image:Union[str,cv2.typing.MatLike],doc_images:list[B
 
 
 def segment_document_elements(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False)->tuple[list[Box],list[Box]]:
-    '''Segment document into text and image bounding boxes using leptonica'''
+    '''Segment document into text and image bounding boxes using leptonica.
+    
+    Outputs
+    -------
+    list[Box]
+        List of text bounding boxes
+    list[Box]
+        List of image bounding boxes
+    '''
+    if isinstance(image,str):
+        image = cv2.imread(image)
 
     images_bb = []
     text_bbs = []
@@ -1053,11 +1066,210 @@ def segment_document_elements(image:Union[str,cv2.typing.MatLike],tmp_dir:str=No
     return text_bbs,images_bb
 
     
+def clean_delimiters_connected_component(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],logs:bool=False,debug:bool=False)->list[Box]:
+    '''Try to reduce the number of delimiters by removing potential delimiters with too many connected components (probably noise or text).'''
+
+    if logs:
+        print('Cleaning delimiters.')
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+
+    # remove low confidence delimiters
+    ## to many conected componentes (probably noise or text)
+    i = 0
+    removed = 0
+    max_components = 5
+    while i < len(delimiters):
+        delimiter = delimiters[i]
+        left = delimiter.left
+        right = delimiter.right
+        top = delimiter.top
+        bottom = delimiter.bottom
+        # add some padding
+        if left == right :
+            right += 1
+        if top == bottom:
+            bottom += 1
+
+        image_portion = image[top:bottom,left:right]
+        print(image_portion.shape)
+        componentes = cv2.connectedComponents(image_portion, 8, cv2.CV_32S)
+        n_components = componentes[0]
+        # remove delimiters with too many connected components
+        if n_components >= max_components:
+            if debug:
+                print(f'Removing delimiter {delimiter.id} with {componentes[0]} connected components.')
+            delimiters.pop(i)
+            removed += 1
+            i -= 1
+
+        i += 1
+
+    if logs:
+        print(f'Conected Components: Removed {removed} delimiters. Remaining {len(delimiters)} delimiters.')
+
+    return delimiters
+
+def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],id:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+    '''Try to reduce the number of delimiters by uning delimiters that are close to each other.
+    
+    * Unite delimiters that are close to each other (intercepting or less than 1% of total image width or height)
+    * Same direction
+    * Within respective borders'''
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    # id delimiters
+    if id:
+        i = 0
+        while i < len(delimiters):
+            delimiters[i].id = i
+            i += 1
+
+
+    # unite delimiters that are close to each other (intercepting or less than 1% of total image width or height)
+    ## same direction
+    ## within respective borders
+    i = 0
+    o_delimiters = len(delimiters)
+    while i < len(delimiters):
+        delimiter = delimiters[i]
+        orientation = delimiter.get_box_orientation()
+        j = 0
+        # compare delimiter with every other
+        while j < len(delimiters):
+            compare_delimiter = delimiters[j]
+
+            if delimiter.id == compare_delimiter.id:
+                j += 1
+                continue
+
+            compare_delimiter_orientation = compare_delimiter.get_box_orientation()
+            # check if same direction
+            if compare_delimiter_orientation == orientation:
+                distance = compare_delimiter.distance_to(delimiter,border='closest')
+                # check if close or intersect and within borders
+                ## if join, restart loop
+                if (distance < image.shape[0]*0.01 or delimiter.intersects_box(compare_delimiter,inside=True)) and delimiter.within_horizontal_boxes(compare_delimiter,range=0.1):
+                    if debug:
+                        print(f'Joining vertically delimiters {delimiter.id} and {compare_delimiter.id}')
+
+                    delimiter.join(compare_delimiter)
+                    delimiters[i] = delimiter
+                    delimiters.pop(j)
+                    i = i - 1 if j < i else i
+                    j = -1
+                elif (distance < image.shape[1]*0.01 or delimiter.intersects_box(compare_delimiter,inside=True)) and delimiter.within_vertical_boxes(compare_delimiter,range=0.1):
+                    if debug:
+                        print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id}')
+                    delimiter.join(compare_delimiter)
+                    delimiters[i] = delimiter
+                    delimiters.pop(j)
+                    i = i - 1 if j < i else i
+                    j = -1
+            j += 1
+        i += 1
+
+
+    if logs:
+        print(f'Unite delimiters: Removed {o_delimiters - len(delimiters)} delimiters.')
+
+    return delimiters
 
 
 
-def get_document_delimeters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False,debug:bool=False)->list[Box]:
-    '''Get document delimiters in image using Hough lines'''
+def clean_delimiters_intersections(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],id:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+    '''Try to reduce the number of delimiters by removing potential delimiters with too many intersections between differently oriented delimiters.'''
+
+    if logs:
+        print('Cleaning delimiters.')
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    # id delimiters
+    if id:
+        i = 0
+        while i < len(delimiters):
+            delimiters[i].id = i
+            i += 1
+
+    # compare delimiter with every other
+    ## if intersects with delimiter with different orientation, remove
+    i = 0
+    removed = 0
+    while i < len(delimiters):
+        delimiter = delimiters[i]
+        orientation = delimiter.get_box_orientation()
+        j = 0
+        while j < len(delimiters):
+            compare_delimiter = delimiters[j]
+            compare_delimiter_orientation = compare_delimiter.get_box_orientation()
+            if delimiter.id == compare_delimiter.id:
+                j += 1
+                continue
+            if orientation != compare_delimiter_orientation and delimiter.intersects_box(compare_delimiter):
+                if debug:
+                    print(f'Removing delimiter {delimiter.id} with {compare_delimiter.id} intersections.')
+                delimiters.pop(i)
+                removed += 1
+                i -= 1
+                break
+            j += 1
+        i += 1
+
+    if logs:
+        print(f'Intersections: Removed {removed} delimiters. Remaining {len(delimiters)} delimiters.')
+
+    return delimiters
+
+
+
+def clean_delimiters(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],check_connected_components:bool=True,unite_delimiters:bool=True,check_intersections:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+    '''Try to reduce the number of delimiters by uning delimiters that are close to each other and removing low confidence delimiters (multiple intersections and low joint component).'''
+
+    if logs:
+        print('Cleaning delimiters.')
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    # apply transformation to unite delimiters that are close to each other
+    dilated=cv2.morphologyEx(image, cv2.MORPH_DILATE, (3,3))
+    tresh = cv2.threshold(dilated, 128, 255, cv2.THRESH_BINARY)[1]
+
+    # id all delimiters
+    i = 0
+    for delimiter in delimiters:
+        delimiter.id = i
+        i += 1
+
+    if check_connected_components:
+        delimiters = clean_delimiters_connected_component(delimiters,tresh,logs=logs,debug=debug)
+
+    if debug:
+        show = draw_bounding_boxes(image,delimiters,id=True)
+        show = cv2.resize(show,(1000,1200))
+        cv2.imshow('image',show)
+        cv2.waitKey(0)
+
+    if unite_delimiters:
+        delimiters = clean_delimiters_unite(delimiters,image,id=False,logs=logs,debug=debug)
+
+    if check_intersections:
+        delimiters = clean_delimiters_intersections(delimiters,image,id=False,logs=logs,debug=debug)
+
+    
+    return delimiters
+
+
+def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,reduce_delimiters:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+    '''Get document delimiters in image using Hough lines. 
+
+    reduce_delimiters option will apply clean_delimiters method.'''
 
     if tmp_dir is None:
         tmp_dir = f'{file_path}/tmp'
@@ -1072,7 +1284,7 @@ def get_document_delimeters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs)
 
     # binarize image and get edges
-    binarized = binarize(image,logs=logs)
+    binarized = binarize(image,denoise_strength=5,logs=logs)
     edges = cv2.Canny(binarized,50,200,None,3)
 
     # dilate edges
@@ -1103,7 +1315,7 @@ def get_document_delimeters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
                 print(f'Line {l} is not horizontal or vertical.')
             continue
         
-        # ignore if line is too short
+        # ignore if line is too short (smaller than 10% of image width)
         length = math.sqrt((x0 - x1)**2 + (y0 - y1)**2)
         if length >= 0.1*image.shape[1]:
             left = min(x0,x1)
@@ -1114,8 +1326,11 @@ def get_document_delimeters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
             delimeter = Box(left,right,top,bottom)
             delimeters.append(delimeter)
 
-    if logs:
-        print(f'Delimeters: {delimeters}')
+    # clean delimeters
+    if reduce_delimiters:
+        delimeters = clean_delimiters(delimeters,binarized,logs=logs,debug=debug)
+    
+
 
     return delimeters
 
@@ -1136,7 +1351,7 @@ def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:b
     if isinstance(image,str):
         image = cv2.imread(image)
 
-    delimiters = get_document_delimeters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
+    delimiters = get_document_delimiters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
 
     # find header delimiter
     ## has to be in the upper 30% of the image, horizontal and ith a lenght of at least 40% of the image
@@ -1186,3 +1401,21 @@ def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:b
     return [header,body,footer]
 
 
+def draw_bounding_boxes(image:Union[str,cv2.typing.MatLike],boxes:list[Box],color:tuple=(0,255,0),custom_color:bool=False,id:bool=False,logs:bool=False,debug:bool=False)->cv2.typing.MatLike:
+    '''Draw bounding boxes on image'''
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    for box in boxes:
+        box_color = color
+        if custom_color:
+            try:
+                box_color = box.color
+            except:
+                pass
+        cv2.rectangle(image,(box.left,box.top),(box.right,box.bottom),box_color,2)
+
+        if id:
+            cv2.putText(image,str(box.id),(box.left,box.top),cv2.FONT_HERSHEY_SIMPLEX,0.5,(0,0,255),1)
+
+    return image
