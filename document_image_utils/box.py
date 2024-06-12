@@ -191,10 +191,12 @@ class Box:
         '''Remove area from box (only if intersect)'''
         if area:
             inside = self.is_inside_box(area)
-            done = False
+            done = inside
+            # While intersecting
+            ## choose action (cut in direction) that removes the less area
             while not done:
                 intersect = self.intersects_box(area)
-                if intersect and not inside:
+                if intersect:
                     above = area.bottom < self.bottom
                     to_left = area.right < self.right
                     to_right = area.left > self.left

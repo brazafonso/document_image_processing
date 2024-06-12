@@ -480,7 +480,7 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
 
 
 
-def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False)->list[Box]:
+def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoother',logs:bool=False)->list[Box]:
     '''Get areas of columns based on black pixel frequency.\n
     Frequencies are then inverted to find white peaks.
     Frequency graph is smoothened using chosen method.
@@ -494,11 +494,9 @@ def divide_columns(image_path:str,method:str='WhittakerSmoother',logs:bool=False
     if method not in methods:
         method = 'WhittakerSmoother'
 
-    if not os.path.exists(image_path):
-        print('Image not found')
-        return columns
+    if isinstance(image,str):
+        image = cv2.imread(image)
 
-    image = cv2.imread(image_path)
     original_height = image.shape[0] # height of original image (for columns dimensions)
 
 
@@ -1094,7 +1092,6 @@ def clean_delimiters_connected_component(delimiters:list[Box],image:Union[str,cv
             bottom += 1
 
         image_portion = image[top:bottom,left:right]
-        print(image_portion.shape)
         componentes = cv2.connectedComponents(image_portion, 8, cv2.CV_32S)
         n_components = componentes[0]
         # remove delimiters with too many connected components
@@ -1385,6 +1382,7 @@ def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:b
     body = Box(0,image.shape[1],0,image.shape[0])
     if header is not None:
         header = Box(0,image.shape[1],0,header.bottom)
+        print('Header',header)
     else:
         header = Box(0,0,0,0)
 
