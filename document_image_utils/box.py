@@ -25,11 +25,11 @@ class Box:
             self.init(*args)
 
 
-    def init(self, left, right, top, bottom):
-        self.left = left
-        self.right = right
-        self.top = top
-        self.bottom = bottom
+    def init(self, left:int, right:int, top:int, bottom:int):
+        self.left = int(left)
+        self.right = int(right)
+        self.top = int(top)
+        self.bottom = int(bottom)
         self.width = right - left
         self.height = bottom - top
 
@@ -73,13 +73,13 @@ class Box:
 
     def update(self, left:int=None, right:int=None, top:int=None, bottom:int=None):
         if left is not None:
-            self.left = left
+            self.left = int(left)
         if right is not None:
-            self.right = right
+            self.right = int(right)
         if top is not None:
-            self.top = top
+            self.top = int(top)
         if bottom is not None:
-            self.bottom = bottom
+            self.bottom = int(bottom)
 
         self.width = self.right - self.left
         self.height = self.bottom - self.top

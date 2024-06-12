@@ -597,7 +597,7 @@ def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoo
             if logs:
                 print('potential columns',potential_columns)
             for column in potential_columns:
-                c = Box({'left':column[0] + fix_pad,'right':column[1] + fix_pad,'top':0,'bottom':original_height})
+                c = Box({'left':int(column[0] + fix_pad),'right':int(column[1] + fix_pad),'top':0,'bottom':int(original_height)})
                 columns.append(c)
         
 
@@ -1379,15 +1379,15 @@ def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:b
 
     # create bboxes for header, body and footer
     ## default body (whole image)
-    body = Box(0,image.shape[1],0,image.shape[0])
+    body = Box(0,int(image.shape[1]),0,int(image.shape[0]))
     if header is not None:
-        header = Box(0,image.shape[1],0,header.bottom)
+        header = Box(0,int(image.shape[1]),0,header.bottom)
         print('Header',header)
     else:
         header = Box(0,0,0,0)
 
     if footer is not None:
-        footer = Box(0,image.shape[1],footer.top,image.shape[0])
+        footer = Box(0,int(image.shape[1]),footer.top,int(image.shape[0]))
     else:
         footer = Box(0,0,0,0)
 
