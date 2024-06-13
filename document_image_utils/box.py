@@ -287,7 +287,7 @@ class Box:
 
     
 
-    def distance_to(self,box:'Box',border:str=None):
+    def distance_to(self,box:'Box',border:str=None,range:int=0.3):
         '''Get distance to box
         
         Uses euclidean distance between center points of boxes
@@ -312,14 +312,14 @@ class Box:
         elif border == 'closest':
             distance = None
             vertical_distance = None
-            if self.within_horizontal_boxes(box):
+            if self.within_horizontal_boxes(box,range=range):
                 if self.bottom < box.top:
                     vertical_distance = abs(self.bottom - box.top)
                 else:
                     vertical_distance = abs(self.center_point()[1] - box.center_point()[1])
                     
             horizontal_distance = None
-            if self.within_vertical_boxes(box):
+            if self.within_vertical_boxes(box,range=range):
                 if self.right < box.left:
                     horizontal_distance = abs(self.right - box.left)
                 else:
