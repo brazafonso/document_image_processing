@@ -1299,9 +1299,9 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     ## horizontal lines
     ### identify, remove non horizontal and accentuate horizontal lines
-    # morph = cv2.erode(morph_base,(1,2),iterations = 1)
+    morph = cv2.erode(morph_base,(1,2),iterations = 1)
     horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(int(image.shape[1]*0.05),3))
-    morph = cv2.dilate(morph_base,horizontal_structure,iterations = 1)
+    morph = cv2.dilate(morph,horizontal_structure,iterations = 1)
     morph = cv2.erode(morph,horizontal_structure,iterations = 1)
 
     ### get edges
@@ -1313,9 +1313,9 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     ## vertical lines
     ### identify, remove non vertical and accentuate vertical lines
-    # morph = cv2.erode(morph_base,(2,1),iterations = 1)
+    morph = cv2.erode(morph_base,(2,1),iterations = 1)
     vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(1,int(image.shape[0]*0.05)))
-    morph = cv2.dilate(morph_base,vertical_structure,iterations = 1)
+    morph = cv2.dilate(morph,vertical_structure,iterations = 1)
     morph = cv2.erode(morph,vertical_structure,iterations = 1)
 
     ### get edges
