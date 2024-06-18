@@ -30,8 +30,8 @@ class Box:
         self.right = int(right)
         self.top = int(top)
         self.bottom = int(bottom)
-        self.width = right - left
-        self.height = bottom - top
+        self.width = self.right - self.left
+        self.height = self.bottom - self.top
 
     def load_json(self,json_dict:dict):
         self.left = json_dict['left']
@@ -287,7 +287,7 @@ class Box:
 
     
 
-    def distance_to(self,box:'Box',border:str=None,range:int=0.3):
+    def distance_to(self,box:'Box',border:str=None,range_x:int=0.3,range_y:int=0.3):
         '''Get distance to box
         
         Uses euclidean distance between center points of boxes
@@ -312,18 +312,14 @@ class Box:
         elif border == 'closest':
             distance = None
             vertical_distance = None
-            if self.within_horizontal_boxes(box,range=range):
-                if self.bottom < box.top:
-                    vertical_distance = abs(self.bottom - box.top)
-                else:
-                    vertical_distance = abs(self.center_point()[1] - box.center_point()[1])
+            center_point = self.center_point()
+            box_center_point = box.center_point()
+            if self.within_horizontal_boxes(box,range=range_x):
+                vertical_distance = min(abs(center_point[1] - box_center_point[1]),abs(self.bottom - box.top),abs(self.top - box.bottom))
                     
             horizontal_distance = None
-            if self.within_vertical_boxes(box,range=range):
-                if self.right < box.left:
-                    horizontal_distance = abs(self.right - box.left)
-                else:
-                    horizontal_distance = abs(self.center_point()[0] - box.center_point()[0])
+            if self.within_vertical_boxes(box,range=range_y):
+                horizontal_distance = min(abs(center_point[0] - box_center_point[0]),abs(self.right - box.left),abs(self.left - box.right))
 
             distance = min(vertical_distance,horizontal_distance) if vertical_distance and horizontal_distance else [v for v in [vertical_distance,horizontal_distance] if v][0] if any([vertical_distance,horizontal_distance]) else None
             if distance:

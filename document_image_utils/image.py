@@ -970,7 +970,7 @@ def remove_document_images(image:Union[str,cv2.typing.MatLike],doc_images:list[B
 
     if not doc_images:
         # identify document images
-        doc_images = identify_document_images(image,tmp_dir=tmp_dir,logs=logs)
+        doc_images = identify_document_images(image.copy(),tmp_dir=tmp_dir,logs=logs)
 
     average_color = [int(np.average(image[:,:,i])) for i in range(3)]
     # remove document images
@@ -1146,13 +1146,15 @@ def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLi
             compare_delimiter_orientation = compare_delimiter.get_box_orientation()
             # check if same direction
             if compare_delimiter_orientation == orientation:
-                distance = compare_delimiter.distance_to(delimiter,border='closest',range=0.3)
+                range_x = 0.1 if orientation == 'horizontal' else 0.3
+                range_y = 0.1 if orientation == 'vertical' else 0.3
+                distance = compare_delimiter.distance_to(delimiter,border='closest',range_x=range_x,range_y=range_y)
                 # check if close or intersect and within borders
                 ## if join, restart loop
                 if ((distance < image.shape[0]*0.01 and orientation == 'horizontal') or (distance < image.shape[0]*0.05 and orientation == 'vertical') or delimiter.intersects_box(compare_delimiter,inside=True))\
                       and delimiter.within_horizontal_boxes(compare_delimiter,range=0.3):
                     if debug:
-                        print(f'Joining vertically delimiters {delimiter.id} and {compare_delimiter.id}')
+                        print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation}')
 
                     delimiter.join(compare_delimiter)
                     delimiters[i] = delimiter
@@ -1162,7 +1164,9 @@ def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLi
                 elif ((distance < image.shape[1]*0.05 and orientation == 'horizontal') or (distance < image.shape[1]*0.01 and orientation == 'vertical') or delimiter.intersects_box(compare_delimiter,inside=True))\
                       and delimiter.within_vertical_boxes(compare_delimiter,range=0.3):
                     if debug:
-                        print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id}')
+                        print(f'Joining vertically delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation}')
+                        print(delimiter)
+                        print(compare_delimiter)
                     delimiter.join(compare_delimiter)
                     delimiters[i] = delimiter
                     delimiters.pop(j)
@@ -1244,15 +1248,15 @@ def clean_delimiters(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],ch
     for delimiter in delimiters:
         delimiter.id = i
         i += 1
-
-    if check_connected_components:
-        delimiters = clean_delimiters_connected_component(delimiters,tresh,logs=logs,debug=debug)
-
     if debug:
         show = draw_bounding_boxes(image,delimiters,id=True)
         show = cv2.resize(show,(1000,1200))
         cv2.imshow('image',show)
         cv2.waitKey(0)
+
+    if check_connected_components:
+        delimiters = clean_delimiters_connected_component(delimiters,tresh,max_components=10,logs=logs,debug=debug)
+
 
     if check_intersections:
         delimiters = clean_delimiters_intersections(delimiters,image,id=False,logs=logs,debug=debug)
@@ -1283,16 +1287,21 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     # binarize image
     ## small noise reduction
-    binarized = binarize(image,denoise_strength=2,logs=logs)
+    binarized = binarize(image,denoise_strength=0,logs=logs)
 
     # dilate
-    morph = cv2.erode(binarized,(3,3),iterations = 1)
+    morph_base = cv2.erode(binarized,(3,3),iterations = 1)
+    show = cv2.resize(morph_base,(1000,1200))
+    cv2.imshow('image',show)
+    cv2.waitKey(0)
+
+
 
     ## horizontal lines
     ### identify, remove non horizontal and accentuate horizontal lines
-    morph = cv2.erode(binarized,(3,3),iterations = 1)
+    # morph = cv2.erode(morph_base,(1,2),iterations = 1)
     horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(int(image.shape[1]*0.05),3))
-    morph = cv2.dilate(morph,horizontal_structure,iterations = 1)
+    morph = cv2.dilate(morph_base,horizontal_structure,iterations = 1)
     morph = cv2.erode(morph,horizontal_structure,iterations = 1)
 
     ### get edges
@@ -1304,9 +1313,9 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     ## vertical lines
     ### identify, remove non vertical and accentuate vertical lines
-    morph = cv2.erode(binarized,(3,3),iterations = 1)
+    # morph = cv2.erode(morph_base,(2,1),iterations = 1)
     vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(1,int(image.shape[0]*0.05)))
-    morph = cv2.dilate(morph,vertical_structure,iterations = 1)
+    morph = cv2.dilate(morph_base,vertical_structure,iterations = 1)
     morph = cv2.erode(morph,vertical_structure,iterations = 1)
 
     ### get edges
@@ -1319,7 +1328,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     lines = []
 
     # merge lines
-    if horizontal_lines is None or vertical_lines is None:
+    if horizontal_lines is not None and vertical_lines is not None:
         lines = np.concatenate((horizontal_lines,vertical_lines),axis=0)
     elif horizontal_lines is not None:
         lines = horizontal_lines
@@ -1362,7 +1371,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     # clean delimeters
     if reduce_delimiters:
-        delimeters = clean_delimiters(delimeters,binarized,logs=logs,debug=debug)
+        delimeters = clean_delimiters(delimeters,binarized,check_connected_components=False,logs=logs,debug=debug)
     
     return delimeters
 
