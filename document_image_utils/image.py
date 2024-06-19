@@ -1291,11 +1291,6 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     # dilate
     morph_base = cv2.erode(binarized,(3,3),iterations = 1)
-    show = cv2.resize(morph_base,(1000,1200))
-    cv2.imshow('image',show)
-    cv2.waitKey(0)
-
-
 
     ## horizontal lines
     ### identify, remove non horizontal and accentuate horizontal lines
