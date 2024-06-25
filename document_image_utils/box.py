@@ -3,6 +3,7 @@
 
 
 import math
+from typing import Union
 
 
 
@@ -95,30 +96,48 @@ class Box:
     def area(self):
         return self.width * self.height
     
-    def within_vertical_boxes(self,box: 'Box',range:float=0):
-        '''Check if boxes are within each other vertically, considering a range (0-1)'''
+    def within_vertical_boxes(self,box: 'Box',range:Union[int,float]=0,range_type:str='relative'):
+        '''Check if boxes are within each other vertically, considering a relative range (0-1) or absolute range'''
+
+        range_abs = 0
+        if range_type == 'absolute':
+            range_abs = range
+        elif range_type == 'relative':
+            range_abs = range * self.height
         
         # check if box is within self with range
-        if (self.top - self.height*range <= box.top and self.bottom + self.height*range >= box.bottom):
+        if (self.top - range_abs <= box.top and self.bottom + range_abs >= box.bottom):
             return True
         
+        if range_type == 'relative':
+            range_abs = range * box.height
+        
         # check if self is within box with range
-        if (box.top - box.height*range <= self.top and box.bottom + box.height*range >= self.bottom):
+        if (box.top - range_abs <= self.top and box.bottom + range_abs >= self.bottom):
             return True
 
 
         return False
             
 
-    def within_horizontal_boxes(self, box: 'Box', range:float=0):
-        '''Check if boxes are within each other horizontally, considering a range (0-1)'''
+    def within_horizontal_boxes(self, box: 'Box', range:Union[int,float]=0,range_type:str='relative'):
+        '''Check if boxes are within each other horizontally, considering a relative range (0-1) or absolute range'''
+
+        range_abs = 0
+        if range_type == 'absolute':
+            range_abs = range
+        elif range_type == 'relative':
+            range_abs = range * self.width
         
         # check if box is within self with range
-        if (self.left - self.width*range <= box.left and self.right + self.width*range >= box.right):
+        if (self.left - range_abs<= box.left and self.right + range_abs >= box.right):
             return True
         
+        if range_type == 'relative':
+            range_abs = range * box.width
+
         # check if self is within box with range
-        if (box.left - box.width*range <= self.left and box.right + box.width*range >= self.right):
+        if (box.left - range_abs <= self.left and box.right + range_abs >= self.right):
             return True
 
         return False
@@ -287,7 +306,7 @@ class Box:
 
     
 
-    def distance_to(self,box:'Box',border:str=None,range_x:int=0.3,range_y:int=0.3):
+    def distance_to(self,box:'Box',border:str=None,range_x:Union[int,float]=0.3,range_y:Union[int,float]=0.3,range_type:str='relative'):
         '''Get distance to box
         
         Uses euclidean distance between center points of boxes
@@ -314,11 +333,11 @@ class Box:
             vertical_distance = None
             center_point = self.center_point()
             box_center_point = box.center_point()
-            if self.within_horizontal_boxes(box,range=range_x):
+            if self.within_horizontal_boxes(box,range=range_x,range_type=range_type):
                 vertical_distance = min(abs(center_point[1] - box_center_point[1]),abs(self.bottom - box.top),abs(self.top - box.bottom))
                     
             horizontal_distance = None
-            if self.within_vertical_boxes(box,range=range_y):
+            if self.within_vertical_boxes(box,range=range_y,range_type=range_type):
                 horizontal_distance = min(abs(center_point[0] - box_center_point[0]),abs(self.right - box.left),abs(self.left - box.right))
 
             distance = min(vertical_distance,horizontal_distance) if vertical_distance and horizontal_distance else [v for v in [vertical_distance,horizontal_distance] if v][0] if any([vertical_distance,horizontal_distance]) else None

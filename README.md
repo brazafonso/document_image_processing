@@ -37,7 +37,7 @@ Aimed for images to be OCRed.
 - **Segment document**
     Segments document image into header, body and footer, using delimiters. Only the body is always guaranteed to have a value.
 
-# Bash commands:\n
+# Bash commands:
 
 - **binarize** : binarize document image.
 

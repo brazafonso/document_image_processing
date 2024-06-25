@@ -1125,12 +1125,14 @@ def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLi
             delimiters[i].id = i
             i += 1
 
-
+    intersects = False
     # unite delimiters that are close to each other (intercepting or less than 5% of total image width or height)
     ## same direction
     ## within respective borders
     i = 0
     o_delimiters = len(delimiters)
+    range_x = int(image.shape[1]*0.005)
+    range_y = int(image.shape[0]*0.005)
     while i < len(delimiters):
         delimiter = delimiters[i]
         orientation = delimiter.get_box_orientation()
@@ -1146,27 +1148,28 @@ def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLi
             compare_delimiter_orientation = compare_delimiter.get_box_orientation()
             # check if same direction
             if compare_delimiter_orientation == orientation:
-                range_x = 0.1 if orientation == 'horizontal' else 0.3
-                range_y = 0.1 if orientation == 'vertical' else 0.3
-                distance = compare_delimiter.distance_to(delimiter,border='closest',range_x=range_x,range_y=range_y)
+                # range_x = range_x_h if orientation == 'horizontal' else range_x_v
+                # range_y = range_y_v if orientation == 'vertical' else range_y_h
+                distance = compare_delimiter.distance_to(delimiter,border='closest',range_x=range_x,range_y=range_y,range_type='absolute')
                 # check if close or intersect and within borders
                 ## if join, restart loop
-                if ((distance < image.shape[0]*0.01 and orientation == 'horizontal') or (distance < image.shape[0]*0.05 and orientation == 'vertical') or delimiter.intersects_box(compare_delimiter,inside=True))\
-                      and delimiter.within_horizontal_boxes(compare_delimiter,range=0.3):
+                if ((distance < image.shape[1]*0.005 and orientation == 'horizontal') or (distance < image.shape[1]*0.01 and orientation == 'vertical') or (intersects:=delimiter.intersects_box(compare_delimiter,inside=True)))\
+                      and delimiter.within_horizontal_boxes(compare_delimiter,range=range_x,range_type='absolute'):
                     if debug:
-                        print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation}')
+                        print(f'Joining vertically delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation} | intersects: {intersects}')
 
                     delimiter.join(compare_delimiter)
                     delimiters[i] = delimiter
                     delimiters.pop(j)
                     i = i - 1 if j < i else i
                     j = -1
-                elif ((distance < image.shape[1]*0.05 and orientation == 'horizontal') or (distance < image.shape[1]*0.01 and orientation == 'vertical') or delimiter.intersects_box(compare_delimiter,inside=True))\
-                      and delimiter.within_vertical_boxes(compare_delimiter,range=0.3):
+                elif ((distance < image.shape[0]*0.01 and orientation == 'horizontal') or (distance < image.shape[0]*0.005 and orientation == 'vertical') or (intersects:=delimiter.intersects_box(compare_delimiter,inside=True)))\
+                      and delimiter.within_vertical_boxes(compare_delimiter,range=range_y,range_type='absolute'):
                     if debug:
-                        print(f'Joining vertically delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation}')
+                        print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation} | intersects: {intersects}')
                         print(delimiter)
                         print(compare_delimiter)
+
                     delimiter.join(compare_delimiter)
                     delimiters[i] = delimiter
                     delimiters.pop(j)
@@ -1254,8 +1257,6 @@ def clean_delimiters(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],ch
         cv2.imshow('image',show)
         cv2.waitKey(0)
 
-    if check_connected_components:
-        delimiters = clean_delimiters_connected_component(delimiters,tresh,max_components=10,logs=logs,debug=debug)
 
 
     if check_intersections:
@@ -1264,11 +1265,13 @@ def clean_delimiters(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],ch
     if unite_delimiters:
         delimiters = clean_delimiters_unite(delimiters,image,id=False,logs=logs,debug=debug)
 
+    if check_connected_components:
+        delimiters = clean_delimiters_connected_component(delimiters,tresh,max_components=20,logs=logs,debug=debug)
 
     return delimiters
 
 
-def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,reduce_delimiters:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,min_length_h:int=None,min_length_v:int=None,max_line_gap_v:int=None,max_line_gap_h:int=None,reduce_delimiters:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
     '''Get document delimiters in image using Hough lines. 
 
     reduce_delimiters option will apply clean_delimiters method.'''
@@ -1281,6 +1284,19 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     if isinstance(image,str):
         image = cv2.imread(image)
+
+    # delimiter identification parameters
+    if min_length_h is None:
+        min_length_h = int(image.shape[1]*0.01)
+
+    if min_length_v is None:
+        min_length_v = int(image.shape[0]*0.01)
+
+    if max_line_gap_v is None:
+        max_line_gap_v = int(image.shape[0]*0.01)
+
+    if max_line_gap_h is None:
+        max_line_gap_h = int(image.shape[1]*0.01)
 
     # remove document images
     image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs)
@@ -1295,7 +1311,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     ## horizontal lines
     ### identify, remove non horizontal and accentuate horizontal lines
     morph = cv2.erode(morph_base,(1,2),iterations = 1)
-    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(int(image.shape[1]*0.05),3))
+    horizontal_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(int(min_length_h),3))
     morph = cv2.dilate(morph,horizontal_structure,iterations = 1)
     morph = cv2.erode(morph,horizontal_structure,iterations = 1)
 
@@ -1304,12 +1320,12 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     edges = cv2.dilate(edges,(2,4),iterations = 1)
 
     ### get hough lines
-    horizontal_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=image.shape[1]*0.05,maxLineGap=image.shape[1]*0.005)
+    horizontal_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=min_length_h,maxLineGap=max_line_gap_h)
 
     ## vertical lines
     ### identify, remove non vertical and accentuate vertical lines
     morph = cv2.erode(morph_base,(2,1),iterations = 1)
-    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(1,int(image.shape[0]*0.05)))
+    vertical_structure = cv2.getStructuringElement(cv2.MORPH_RECT,(1,int(min_length_v)))
     morph = cv2.dilate(morph,vertical_structure,iterations = 1)
     morph = cv2.erode(morph,vertical_structure,iterations = 1)
 
@@ -1318,7 +1334,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     edges = cv2.dilate(edges,(4,2),iterations = 1)
 
     ### get hough lines
-    vertical_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=image.shape[0]*0.05,maxLineGap=image.shape[0]*0.005)
+    vertical_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=min_length_v,maxLineGap=max_line_gap_v)
 
     lines = []
 
@@ -1330,8 +1346,8 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     elif vertical_lines is not None:
         lines = vertical_lines
 
-    # get delimeters
-    delimeters = []
+    # get delimiters
+    delimiters = []
     for line in lines:
         l = line[0]
 
@@ -1356,19 +1372,43 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         top = min(y0,y1)
         bottom = max(y0,y1)
 
-        delimeter = Box(left,right,top,bottom)
-        delimeters.append(delimeter)
+        delimiter = Box(left,right,top,bottom)
+        delimiters.append(delimiter)
 
-    # remove potential border delimeters
-    for delimeter in delimeters:
-        if delimeter.left == 0 or delimeter.top == 0 or delimeter.right == image.shape[1] or delimeter.bottom == image.shape[0]:
-            delimeters.remove(delimeter)
+    # remove potential border delimiters
+    for delimiter in delimiters:
+        if delimiter.left == 0 or delimiter.top == 0 or delimiter.right == image.shape[1] or delimiter.bottom == image.shape[0]:
+            delimiters.remove(delimiter)
 
-    # clean delimeters
+    # clean delimiters
     if reduce_delimiters:
-        delimeters = clean_delimiters(delimeters,binarized,check_connected_components=False,logs=logs,debug=debug)
+        delimiters = clean_delimiters(delimiters,binarized,logs=logs,debug=debug)
+
+    # check if delimiters have a minimum size (5% of image size)
+    # also remove delimiters in border
+    minimum_size_h = image.shape[1]*0.05
+    minimum_size_v = image.shape[0]*0.05
+    i = 0
+    while i < len(delimiters):
+        delimiter = delimiters[i]
+        orientation = delimiter.get_box_orientation()
+        if orientation == 'horizontal':
+            if delimiter.width < minimum_size_h or \
+                delimiter.top == 0 or delimiter.bottom == image.shape[0]:
+                
+                delimiters.remove(delimiter)
+                i -= 1
+        elif orientation == 'vertical':
+            if delimiter.height < minimum_size_v or \
+                delimiter.left == 0 or delimiter.right == image.shape[1]:
+                
+                delimiters.remove(delimiter)
+                i -= 1
+
+        i += 1
+
     
-    return delimeters
+    return delimiters
 
 
 
