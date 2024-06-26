@@ -1167,8 +1167,6 @@ def clean_delimiters_unite(delimiters:list[Box],image:Union[str,cv2.typing.MatLi
                       and delimiter.within_vertical_boxes(compare_delimiter,range=range_y,range_type='absolute'):
                     if debug:
                         print(f'Joining horizontally delimiters {delimiter.id} and {compare_delimiter.id} | distance: {distance} | orientation: {orientation} | intersects: {intersects}')
-                        print(delimiter)
-                        print(compare_delimiter)
 
                     delimiter.join(compare_delimiter)
                     delimiters[i] = delimiter
@@ -1209,7 +1207,7 @@ def clean_delimiters_intersections(delimiters:list[Box],image:Union[str,cv2.typi
     while i < len(delimiters):
         delimiter = delimiters[i]
         orientation = delimiter.get_box_orientation()
-        j = 0
+        j = i
         while j < len(delimiters):
             compare_delimiter = delimiters[j]
             compare_delimiter_orientation = compare_delimiter.get_box_orientation()
@@ -1377,9 +1375,11 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         if delimiter.left == 0 or delimiter.top == 0 or delimiter.right == image.shape[1] or delimiter.bottom == image.shape[0]:
             delimiters.remove(delimiter)
 
+
     # clean delimiters
     if reduce_delimiters:
-        delimiters = clean_delimiters(delimiters,binarized,logs=logs,debug=debug)
+        delimiters = clean_delimiters(delimiters,binarized,check_connected_components=False,logs=logs,debug=debug)
+
 
     # check if delimiters have a minimum size (5% of image size)
     # also remove delimiters in border
@@ -1392,18 +1392,23 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         if orientation == 'horizontal':
             if delimiter.width < minimum_size_h or \
                 delimiter.top == 0 or delimiter.bottom == image.shape[0]:
-                
+                if debug:
+                    print(f'Removing delimiter {delimiter.id} because it is too small.')
                 delimiters.remove(delimiter)
                 i -= 1
         elif orientation == 'vertical':
             if delimiter.height < minimum_size_v or \
                 delimiter.left == 0 or delimiter.right == image.shape[1]:
+                if debug:
+                    print(f'Removing delimiter {delimiter.id} because it is too small.')
                 
                 delimiters.remove(delimiter)
                 i -= 1
 
         i += 1
 
+    if logs:
+        print(f'Found {len(delimiters)} delimiters.')
     
     return delimiters
 
@@ -1483,7 +1488,7 @@ def segment_document(image:Union[str,cv2.typing.MatLike],remove_images:bool=True
         image = cv2.imread(image)
 
     if remove_images:
-        image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
+        image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs)
 
     delimiters = get_document_delimiters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
 
