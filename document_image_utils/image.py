@@ -1276,7 +1276,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     reduce_delimiters option will apply clean_delimiters method.'''
 
-    if tmp_dir is None:
+    if not tmp_dir:
         tmp_dir = f'{file_path}/tmp'
 
     if not os.path.exists(tmp_dir):
@@ -1286,23 +1286,20 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         image = cv2.imread(image)
 
     # delimiter identification parameters
-    if min_length_h is None:
+    if not min_length_h:
         min_length_h = int(image.shape[1]*0.01)
 
-    if min_length_v is None:
+    if not min_length_v:
         min_length_v = int(image.shape[0]*0.01)
 
-    if max_line_gap_v is None:
+    if not max_line_gap_v:
         max_line_gap_v = int(image.shape[0]*0.01)
 
-    if max_line_gap_h is None:
+    if not max_line_gap_h:
         max_line_gap_h = int(image.shape[1]*0.01)
 
-    # remove document images
-    image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs)
 
     # binarize image
-    ## small noise reduction
     binarized = binarize(image,denoise_strength=0,logs=logs)
 
     # dilate
@@ -1412,22 +1409,16 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
 
 
-def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:bool=False,debug:bool=False)->tuple[Box,Box,Box]:
-    '''Segment document into header, body and footer using delimiters'''
+
+def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:list[Box],logs:bool=False,debug:bool=False)->list[Box]:
+    '''Segment document into header, body and footer using list of delimiters'''
+
     header = None
     body = None
     footer = None
 
-    if tmp_dir is None:
-        tmp_dir = f'{file_path}/tmp'
-
-    if not os.path.exists(tmp_dir):
-        os.makedirs(tmp_dir)
-
     if isinstance(image,str):
         image = cv2.imread(image)
-
-    delimiters = get_document_delimiters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
 
     # find header delimiter
     ## has to be in the upper 30% of the image, horizontal and ith a lenght of at least 40% of the image
@@ -1476,6 +1467,31 @@ def segment_document(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,logs:b
 
 
     return [header,body,footer]
+
+
+
+def segment_document(image:Union[str,cv2.typing.MatLike],remove_images:bool=True,tmp_dir:str=None,logs:bool=False,debug:bool=False)->tuple[Box,Box,Box]:
+    '''Segment document into header, body and footer using delimiters. Uses aux function: segment_document_delimiters.'''
+    
+    if not tmp_dir:
+        tmp_dir = f'{file_path}/tmp'
+
+    if not os.path.exists(tmp_dir):
+        os.makedirs(tmp_dir)
+
+    if isinstance(image,str):
+        image = cv2.imread(image)
+
+    if remove_images:
+        image = remove_document_images(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
+
+    delimiters = get_document_delimiters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
+
+    header,body,footer = segment_document_delimiters(image,delimiters,logs=logs,debug=debug)
+
+    return header,body,footer
+
+
 
 
 def draw_bounding_boxes(image:Union[str,cv2.typing.MatLike],boxes:list[Box],color:tuple=(0,255,0),custom_color:bool=False,id:bool=False,logs:bool=False,debug:bool=False)->cv2.typing.MatLike:
