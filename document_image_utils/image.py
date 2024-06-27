@@ -1409,13 +1409,25 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     if logs:
         print(f'Found {len(delimiters)} delimiters.')
+
+
+    if debug:
+        # id all delimiters
+        i = 0
+        for delimiter in delimiters:
+            delimiter.id = i
+            i += 1
+        show = draw_bounding_boxes(image.copy(),delimiters,id=True)
+        show = cv2.resize(show,(1000,1200))
+        cv2.imshow('image',show)
+        cv2.waitKey(0)
     
     return delimiters
 
 
 
 
-def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:list[Box],logs:bool=False,debug:bool=False)->list[Box]:
+def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:list[Box],target_segments:list[str]=['header','body','footer'],logs:bool=False,debug:bool=False)->list[Box]:
     '''Segment document into header, body and footer using list of delimiters'''
 
     header = None
@@ -1436,7 +1448,7 @@ def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:l
     if len(potential_header_delimiters) > 0:
         # sort delimiters by y position (lower is better)
         potential_header_delimiters.sort(key=lambda x: x.top)
-        header = potential_header_delimiters[0]
+        header = potential_header_delimiters[-1]
 
 
     # find footer delimiter
@@ -1457,7 +1469,6 @@ def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:l
     body = Box(0,int(image.shape[1]),0,int(image.shape[0]))
     if header is not None:
         header = Box(0,int(image.shape[1]),0,header.bottom)
-        print('Header',header)
     else:
         header = Box(0,0,0,0)
 
@@ -1467,15 +1478,22 @@ def segment_document_delimiters(image:Union[str,cv2.typing.MatLike],delimiters:l
         footer = Box(0,0,0,0)
 
     ## remove heade and footer from body
-    body.remove_box_area(header)
-    body.remove_box_area(footer)
+    if 'header' in target_segments:
+        body.remove_box_area(header)
+    else:
+        header = Box(0,0,0,0)
+
+    if 'footer' in target_segments:
+        body.remove_box_area(footer)
+    else:
+        footer = Box(0,0,0,0)
 
 
     return [header,body,footer]
 
 
 
-def segment_document(image:Union[str,cv2.typing.MatLike],remove_images:bool=True,tmp_dir:str=None,logs:bool=False,debug:bool=False)->tuple[Box,Box,Box]:
+def segment_document(image:Union[str,cv2.typing.MatLike],remove_images:bool=True,tmp_dir:str=None,target_segments:list[str]=['header','body','footer'],logs:bool=False,debug:bool=False)->tuple[Box,Box,Box]:
     '''Segment document into header, body and footer using delimiters. Uses aux function: segment_document_delimiters.'''
     
     if not tmp_dir:
@@ -1492,7 +1510,7 @@ def segment_document(image:Union[str,cv2.typing.MatLike],remove_images:bool=True
 
     delimiters = get_document_delimiters(image,tmp_dir=tmp_dir,logs=logs,debug=debug)
 
-    header,body,footer = segment_document_delimiters(image,delimiters,logs=logs,debug=debug)
+    header,body,footer = segment_document_delimiters(image,delimiters,target_segments=target_segments,logs=logs,debug=debug)
 
     return header,body,footer
 
