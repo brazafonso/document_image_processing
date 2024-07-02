@@ -680,9 +680,6 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
     x_axis_freq = np.add.reduce(binarized, axis=0)
 
     if x_axis_freq.any():
-        max_freq = max(x_axis_freq)
-        x_axis_freq = np.array([max_freq - i for i in x_axis_freq])
-
         # add 5% of length before and after
         x_axis_freq = np.append(np.zeros(int(len(x_axis_freq)*0.05)),x_axis_freq)
         x_axis_freq = np.append(x_axis_freq,np.zeros(int(len(x_axis_freq)*0.05)))
@@ -870,8 +867,46 @@ def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:
     if invert:
         type = cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     image = cv2.threshold(image, 0, 255,type)[1]
-
     return image
+
+
+
+def binarize_fax(image:Union[str,cv2.typing.MatLike],logs:bool=False)->np.ndarray:
+    '''Binarize image using fax binarization algorithm.
+    
+    Algorithm:
+    convert "image" -colorspace Gray ( +clone -blur 15,15 ) -compose Divide_Src -composite -level 10%,90%,0.2
+    '''
+    if isinstance(image,str):
+        image = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+
+    # step 1 - convert to gray
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Step 2: Apply a blur (15,15)
+    ## horizontal blur
+    blurred = cv2.GaussianBlur(gray, (15, 1), 15)
+
+    ## vertical blur
+    blurred = cv2.GaussianBlur(blurred, (1, 15), 0,sigmaY=15)
+
+    # Step 3: Composite operation (Divide_Src)
+    composite = gray / blurred
+
+    # Step 4: Adjust levels (emulate -level 10%,90%,0.2)
+    color_range = 255
+    in_min = color_range * 0.1
+    in_max = color_range * 0.9
+    print(in_min,in_max)
+    ## change black and white values
+    tresh = np.where(composite == 0, in_min, composite)
+    tresh = np.where(tresh == 255, in_max, tresh)
+    ## adjust gamma
+    gamma = 0.2
+    tresh = np.power(tresh, 1/gamma)
+    return tresh
+
+
 
 
 def canny_edge_detection(image:cv2.typing.MatLike): 
