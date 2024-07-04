@@ -884,28 +884,25 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],logs:bool=False)->np.ndarra
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Step 2: Apply a blur (15,15)
-    ## horizontal blur
-    blurred = cv2.GaussianBlur(gray, (15, 1), 15)
-
-    ## vertical blur
-    blurred = cv2.GaussianBlur(blurred, (1, 15), 0,sigmaY=15)
+    blurred = cv2.blur(gray,(30,30)) # closest results
 
     # Step 3: Composite operation (Divide_Src)
     composite = gray / blurred
 
     # Step 4: Adjust levels (emulate -level 10%,90%,0.2)
-    color_range = 255
-    in_min = color_range * 0.1
-    in_max = color_range * 0.9
-    print(in_min,in_max)
+    in_min,in_max = np.percentile(composite,[10,90])
     ## change black and white values
-    tresh = np.where(composite == 0, in_min, composite)
-    tresh = np.where(tresh == 255, in_max, tresh)
-    ## adjust gamma
+    ### any value bellow in_min will be set to black (0)
+    ### any value above in_max will be set to white (255)
+    ### any value in between will be 'stretched' linearly to fill the complete range of values
+    #### apply gamma correction
     gamma = 0.2
-    tresh = np.power(tresh, 1/gamma)
-    return tresh
+    map = np.vectorize(lambda x: 0**gamma if x <= in_min else 255**gamma if x >= in_max else (255 * (x - in_min) / (in_max - in_min))**gamma)
+    tresh = map(composite)
+    ## normalize to 0-255
+    tresh = cv2.normalize(tresh, None, 0, 255, cv2.NORM_MINMAX)
 
+    return tresh
 
 
 
