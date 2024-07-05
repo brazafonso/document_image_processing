@@ -120,16 +120,13 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
     direction = 'None'
     # crop margin
     image = image[crop_top:image.shape[0]-crop_bottom,crop_left:image.shape[1]-crop_right]
-    # grey scale
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # binarize, clean salt and pepper noise and dilate
-    thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY_INV)[1]
-    filtered = cv2.medianBlur(thresh, 3)
+    binarized = binarize_fax(image,invert=True,logs=False)
+    filtered = cv2.medianBlur(binarized, 3)
     dilation = cv2.dilate(filtered, np.ones((0,20),np.uint8),iterations=3)
     transformed_image = dilation
 
     if debug:
-        cv2.imwrite(f'{test_path}_thresh.png',thresh)
+        cv2.imwrite(f'{test_path}_thresh.png',binarized)
         cv2.imwrite(f'{test_path}_filtered.png',filtered)
         cv2.imwrite(f'{test_path}_dilation.png',dilation)
 
@@ -380,16 +377,15 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
         cropped = cut_document_margins(og_img)
         cut_img = og_img[cropped.top:cropped.bottom, cropped.left:cropped.right]
 
-    gray_img = cv2.cvtColor(cut_img, cv2.COLOR_BGR2GRAY)
-    binary_img = cv2.threshold(gray_img, 128, 255, cv2.THRESH_OTSU)
+    binary_img = binarize_fax(cut_img,invert=False)
 
     # get first black pixel in each line of image
     ## analyses lines acording to line_quantetization
     pixels = []
-    step = math.floor(binary_img[1].shape[0]/line_quantetization)
-    for y in range(0,binary_img[1].shape[0], step):
-        for x in range(binary_img[1].shape[1]):
-            if binary_img[1][y][x] == 0:
+    step = math.floor(binary_img.shape[0]/line_quantetization)
+    for y in range(0,binary_img.shape[0], step):
+        for x in range(binary_img.shape[1]):
+            if binary_img[y][x] == 0:
                 pixels.append((x,y))
                 break
 
@@ -408,7 +404,7 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
     # each set is a list of pixels in x coordinates order (ascending or descending depending on rotation direction)
     sets = []
     for i in range(1,len(pixels)-1):
-        new_set = create_vertical_aligned_pixel_set(pixels[i:], binary_img[1].shape, direction)
+        new_set = create_vertical_aligned_pixel_set(pixels[i:], binary_img.shape, direction)
         sets.append(new_set)
 
 
@@ -506,14 +502,8 @@ def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoo
     # cut possible header and footer (cut 30% from top and 10% from bottom)
     image = image[round(image.shape[0]*0.3):image.shape[0]-round(image.shape[0]*0.1),:]
 
-    # black and white
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # clean noise
-    se=cv2.getStructuringElement(cv2.MORPH_RECT , (8,8))
-    bg=cv2.morphologyEx(gray, cv2.MORPH_DILATE, se)
-    gray=cv2.divide(gray, bg, scale=255)
     # binarize
-    binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
+    binarized = binarize_fax(image,logs=logs)
 
     # get frequency of white pixels per x axis
     x_axis_freq = np.zeros(binarized.shape[1])
@@ -666,15 +656,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
     cut_document = Box({'left':0,'right':image.shape[1],'top':0,'bottom':image.shape[0]})
 
-    # black and white
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # clean noise
-    se=cv2.getStructuringElement(cv2.MORPH_RECT , (8,8))
-    bg=cv2.morphologyEx(gray, cv2.MORPH_DILATE, se)
-    gray=cv2.divide(gray, bg, scale=255)
-    # binarize
-    binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-
+    binarized = binarize_fax(image,invert=True,logs=logs)
 
     # get frequency of black pixels per column
     x_axis_freq = np.add.reduce(binarized, axis=0)
@@ -871,7 +853,7 @@ def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:
 
 
 
-def binarize_fax(image:Union[str,cv2.typing.MatLike],logs:bool=False)->np.ndarray:
+def binarize_fax(image:Union[str,cv2.typing.MatLike],invert:bool=False,logs:bool=False)->np.ndarray:
     '''Binarize image using fax binarization algorithm.
     
     Algorithm:
@@ -887,7 +869,7 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],logs:bool=False)->np.ndarra
     blurred = cv2.blur(gray,(30,30)) # closest results
 
     # Step 3: Composite operation (Divide_Src)
-    composite = gray / blurred
+    composite = cv2.divide(gray,blurred,scale=255)
 
     # Step 4: Adjust levels (emulate -level 10%,90%,0.2)
     in_min,in_max = np.percentile(composite,[10,90])
@@ -897,10 +879,17 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],logs:bool=False)->np.ndarra
     ### any value in between will be 'stretched' linearly to fill the complete range of values
     #### apply gamma correction
     gamma = 0.2
-    map = np.vectorize(lambda x: 0**gamma if x <= in_min else 255**gamma if x >= in_max else (255 * (x - in_min) / (in_max - in_min))**gamma)
-    tresh = map(composite)
+    mapped = np.where(composite <= in_min, 0, 
+                  np.where(composite >= in_max, 255, 
+                           255 * (composite - in_min) / (in_max - in_min)))
+    level = mapped ** gamma
     ## normalize to 0-255
-    tresh = cv2.normalize(tresh, None, 0, 255, cv2.NORM_MINMAX)
+    level = cv2.normalize(level, None, 0, 255, cv2.NORM_MINMAX)
+    ## tresh
+    tresh_type = cv2.THRESH_BINARY if not invert else cv2.THRESH_BINARY_INV
+    tresh = cv2.threshold(level, 0, 255, tresh_type)[1]
+    ## convert to uint8
+    tresh = tresh.astype(np.uint8)
 
     return tresh
 
@@ -1330,7 +1319,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
 
     # binarize image
-    binarized = binarize(image,denoise_strength=0,logs=logs)
+    binarized = binarize_fax(image,logs=logs)
 
     # dilate
     morph_base = cv2.erode(binarized,(3,3),iterations = 1)
