@@ -852,8 +852,38 @@ def binarize(image:Union[str,cv2.typing.MatLike],denoise_strength:int=10,invert:
     return image
 
 
+def level_image(image:Union[str,cv2.typing.MatLike], black_point:Union[int,float]=0, white_point:Union[int,float]=255, gamma:float=1.0, is_percentage:bool=False)->np.ndarray:
+    '''Level image to black and white.'''
+    if isinstance(image,str):
+        image = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+    else:
+        # check if image is grayscale
+        if len(image.shape) == 3:
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Convert black_point and white_point from percentages to absolute values if needed
+    if is_percentage:
+        black_point = (black_point / 100.0) * 255
+        white_point = (white_point / 100.0) * 255
+    
+    # Ensure the points are within valid range
+    black_point = max(0, min(255, black_point))
+    white_point = max(0, min(255, white_point))
+    
+    # Stretch or compress the contrast
+    scale = 255.0 / (white_point - black_point)
+    image = np.clip((image - black_point) * scale, 0, 255).astype(np.uint8)
+    
+    # Apply gamma correction
+    if gamma != 1.0:
+        inv_gamma = 1.0 / gamma
+        table = np.array([(i / 255.0) ** inv_gamma * 255 for i in np.arange(0, 256)]).astype("uint8")
+        image = cv2.LUT(image, table)
+    
+    return image
 
-def binarize_fax(image:Union[str,cv2.typing.MatLike],invert:bool=False,logs:bool=False)->np.ndarray:
+
+def binarize_fax(image:Union[str,cv2.typing.MatLike],g_kernel_size:int=30,g_sigma:int=15,black_point:Union[int,float]=10,
+                 white_point:Union[int,float]=90,gamma:float=0.2,is_percentage:bool=True,invert:bool=False,logs:bool=False)->np.ndarray:
     '''Binarize image using fax binarization algorithm.
     
     Algorithm:
@@ -866,32 +896,20 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],invert:bool=False,logs:bool
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Step 2: Apply a blur (15,15)
-    blurred = cv2.blur(gray,(30,30)) # closest results
+    # blurred = cv2.blur(gray,(30,30)) # closest results
+    kernel = cv2.getGaussianKernel(g_kernel_size, g_sigma)
+    blurred = cv2.sepFilter2D(gray, -1, kernel, kernel)
 
     # Step 3: Composite operation (Divide_Src)
-    composite = cv2.divide(gray,blurred,scale=255)
+    composite = cv2.divide(gray,blurred, scale=255)
 
     # Step 4: Adjust levels (emulate -level 10%,90%,0.2)
-    in_min,in_max = np.percentile(composite,[10,90])
-    ## change black and white values
-    ### any value bellow in_min will be set to black (0)
-    ### any value above in_max will be set to white (255)
-    ### any value in between will be 'stretched' linearly to fill the complete range of values
-    #### apply gamma correction
-    gamma = 0.2
-    mapped = np.where(composite <= in_min, 0, 
-                  np.where(composite >= in_max, 255, 
-                           255 * (composite - in_min) / (in_max - in_min)))
-    level = mapped ** gamma
-    ## normalize to 0-255
-    level = cv2.normalize(level, None, 0, 255, cv2.NORM_MINMAX)
-    ## tresh
-    tresh_type = cv2.THRESH_BINARY if not invert else cv2.THRESH_BINARY_INV
-    tresh = cv2.threshold(level, 0, 255, tresh_type)[1]
-    ## convert to uint8
-    tresh = tresh.astype(np.uint8)
+    level = level_image(composite,black_point,white_point,gamma,is_percentage=is_percentage)
 
-    return tresh
+    if invert:
+        level = 255 - level
+
+    return level
 
 
 
