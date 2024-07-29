@@ -117,6 +117,7 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
         test_img_name = image.split("/")[-1] if isinstance(image,str) else 'test'
         test_path = f'{test_path}/test/{test_img_name}'
 
+
     direction = 'None'
     # crop margin
     image = image[crop_top:image.shape[0]-crop_bottom,crop_left:image.shape[1]-crop_right]
@@ -135,12 +136,12 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
     pixels = []
     step = math.floor(transformed_image.shape[0]/line_quantetization)
 
+    # get pixels that are not black
     for y in range(0,transformed_image.shape[0], step):
         for x in range(transformed_image.shape[1]):
-            if transformed_image[y][x] == 255:
+            if transformed_image[y][x] != 0:
                 pixels.append((x,y))
                 break
-
 
     if debug:
     # draw pixels
@@ -163,11 +164,12 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
         counter_clockwise_sets.append(pixels_set_remove_outliers(new_ccw_set,'counter_clockwise'))
         same_x_sets.append(new_same_x_set)
 
+   
 
     # find biggest sets
-    biggest_clockwise_set = max(clockwise_sets, key=len)
-    biggest_counter_clockwise_set = max(counter_clockwise_sets, key=len)
-    biggest_same_x_set = max(same_x_sets, key=len)
+    biggest_clockwise_set = max(clockwise_sets, key=len) if clockwise_sets else []
+    biggest_counter_clockwise_set = max(counter_clockwise_sets, key=len) if counter_clockwise_sets else []
+    biggest_same_x_set = max(same_x_sets, key=len) if same_x_sets else []
 
     if debug:
         print('test','clockwise',len(biggest_clockwise_set))
@@ -374,10 +376,10 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
         # crop margin
         cut_img = og_img[crop_top:og_img.shape[0] - crop_bottom, crop_left:og_img.shape[1] - crop_right]
     else:
-        cropped = cut_document_margins(og_img)
+        cropped = cut_document_margins(og_img.copy())
         cut_img = og_img[cropped.top:cropped.bottom, cropped.left:cropped.right]
 
-    binary_img = binarize_fax(cut_img,invert=False)
+    binary_img = binarize_fax(cut_img,invert=True)
 
     # get first black pixel in each line of image
     ## analyses lines acording to line_quantetization
@@ -385,7 +387,7 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
     step = math.floor(binary_img.shape[0]/line_quantetization)
     for y in range(0,binary_img.shape[0], step):
         for x in range(binary_img.shape[1]):
-            if binary_img[y][x] == 0:
+            if binary_img[y][x] != 0:
                 pixels.append((x,y))
                 break
 
