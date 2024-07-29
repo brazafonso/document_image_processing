@@ -20,6 +20,10 @@ Aimed for images to be OCRed.
 
 - **Binarize document**
 
+    Normal binarization with otsu tresholding and fastNlMeansDenoising.
+
+    Fax binarization, following the image magick command: convert "image" -colorspace Gray ( +clone -blur 15,15 ) -compose Divide_Src -composite -level 10%,90%,0.2
+
 - **Split document into columns**
 
     Analyzes document image pixel color frequency and split document image into columns.
