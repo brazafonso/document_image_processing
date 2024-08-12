@@ -15,10 +15,10 @@ def process_args():
     parser.add_argument('-f','--fax',                       action='store_true',                        help='Fax binarization.')
     parser.add_argument('-gks','--gaussian_kernel_size',    type=int, default=30,                       help='Gaussian kernel size, only for fax binarization.')
     parser.add_argument('-gs','--gaussian_sigma',           type=int, default=15,                       help='Gaussian sigma, only for fax binarization.')
-    parser.add_argument('-bp','--black_point',              type=int, default=100,                      help='Black point to use when thresholding, only for fax binarization.')
-    parser.add_argument('-wp','--white_point',              type=int, default=255,                      help='White point to use when thresholding, only for fax binarization.')
+    parser.add_argument('-bp','--black_point',              type=int, default=10,                      help='Black point to use when thresholding, only for fax binarization.')
+    parser.add_argument('-wp','--white_point',              type=int, default=90,                      help='White point to use when thresholding, only for fax binarization.')
     parser.add_argument('-pp','--percentage_point',         action='store_false',                       help='Use percentage point instead of absolute point (for black and white point value), only for fax binarization.')
-    parser.add_argument('-g','--gamma',                     type=float, default=1.0,                    help='Gamma to use for gamma correction, only for fax binarization.')
+    parser.add_argument('-g','--gamma',                     type=float, default=0.2,                    help='Gamma to use for gamma correction, only for fax binarization.')
     parser.add_argument('-ds', '--denoise_strength',        type=int, default=None,                     help='Denoise strength, only for normal binarization. If auto, calculates SNR of image and chooses the best denoise strength.')
     parser.add_argument('-1bpp', '--one_bit_per_pixel',     action='store_true',                        help='Convert to one bit per pixel.')
     parser.add_argument('-i','--invert',                    action='store_true',                        help='Invert image binarization (black background and white text).')
@@ -47,11 +47,11 @@ def main():
     if args.fax:
         binarized_image = binarize_fax(image=image_path,
                                         invert=args.invert,
-                                        gaussian_kernel_size=args.gaussian_kernel_size,
-                                        gaussian_sigma=args.gaussian_sigma,
+                                        g_kernel_size=args.gaussian_kernel_size,
+                                        g_sigma=args.gaussian_sigma,
                                         black_point=args.black_point,
                                         white_point=args.white_point,
-                                        percentage_point=args.percentage_point,
+                                        is_percentage=args.percentage_point,
                                         gamma=args.gamma,
                                         logs=args.debug)
     else:

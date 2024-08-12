@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "document_image_utils"
-version = "0.1.24"
+version = "0.1.24.5"
 description = "Toolkit for document image processing"
 authors = ["Gonçalo Afonso <brazafonso2001@gmail.com>"]
 readme = "README.md"
@@ -12,6 +12,8 @@ packages = [
 python = "^3.10.11"
 opencv-python = "^4.9.0.80"
 scipy = "^1.12.0"
+whittaker_eilers = "*"
+matplotlib = "*"
 
 [build-system]
 requires = ["poetry-core"]

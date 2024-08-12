@@ -892,7 +892,7 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],g_kernel_size:int=30,g_sigm
     convert "image" -colorspace Gray ( +clone -blur 15,15 ) -compose Divide_Src -composite -level 10%,90%,0.2
     '''
     if isinstance(image,str):
-        image = cv2.imread(image,cv2.IMREAD_GRAYSCALE)
+        image = cv2.imread(image)
 
     # step 1 - convert to gray
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -1398,6 +1398,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         dy = y1 - y0
         is_vertical = dy != 0 and abs(dx/dy) < t5
         is_horizontal = dx != 0 and abs(dy/dx) < t60
+        # if not horizontal and not vertical, skip
         if not is_vertical and not is_horizontal:
             if debug:
                 print(f'Line {l} is not horizontal or vertical.')
@@ -1413,7 +1414,12 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     # remove potential border delimiters
     for delimiter in delimiters:
-        if delimiter.left == 0 or delimiter.top == 0 or delimiter.right == image.shape[1] or delimiter.bottom == image.shape[0]:
+        if delimiter.left in [0,image.shape[1]] or\
+            delimiter.top in [0,image.shape[0]] or\
+            delimiter.right in [0,image.shape[1]] or\
+            delimiter.bottom in [0,image.shape[0]]:
+            if debug:
+                print(f'Removing delimiter {delimiter.id} because it is in the border.')
             delimiters.remove(delimiter)
 
 
