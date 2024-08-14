@@ -135,6 +135,8 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
     # calculate sets
     pixels = []
     step = math.floor(transformed_image.shape[0]/line_quantetization)
+    if step == 0:
+        step = 1
 
     # get pixels that are not black
     for y in range(0,transformed_image.shape[0], step):
@@ -385,6 +387,9 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
     ## analyses lines acording to line_quantetization
     pixels = []
     step = math.floor(binary_img.shape[0]/line_quantetization)
+    if step == 0:
+        step = 1
+        
     for y in range(0,binary_img.shape[0], step):
         for x in range(binary_img.shape[1]):
             if binary_img[y][x] != 0:
