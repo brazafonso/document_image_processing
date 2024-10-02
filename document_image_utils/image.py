@@ -454,10 +454,15 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
     #     this method can't be used for adjusting more than a few degrees
     leptonica_adjust_rotation_path = f'{file_path}/leptonica_lib/adjust_rotation'
     if os.path.exists(leptonica_adjust_rotation_path):
-        cv2.imwrite(f'leptonica_tmp.png',rotated_img)
-        os.system(f'{leptonica_adjust_rotation_path} leptonica_tmp.png leptonica_tmp.png')
-        rotated_img = cv2.imread(f'leptonica_tmp.png')
-        os.remove(f'leptonica_tmp.png')
+        try:
+            cv2.imwrite(f'leptonica_tmp.png',rotated_img)
+            os.system(f'{leptonica_adjust_rotation_path} leptonica_tmp.png leptonica_tmp.png')
+            rotated_img = cv2.imread(f'leptonica_tmp.png')
+            os.remove(f'leptonica_tmp.png')
+        except Exception as e:
+            if debug:
+                print('Leptonica adjustment failed.')
+                print(e)
 
 
     ## test images
@@ -903,7 +908,6 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],g_kernel_size:int=30,g_sigm
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
     # Step 2: Apply a blur (15,15)
-    # blurred = cv2.blur(gray,(30,30)) # closest results
     kernel = cv2.getGaussianKernel(g_kernel_size, g_sigma)
     blurred = cv2.sepFilter2D(gray, -1, kernel, kernel)
 
@@ -957,7 +961,8 @@ def identify_document_images(image:Union[str,cv2.typing.MatLike],tmp_dir:str=Non
         List of boxes with document images'''
     
     if tmp_dir is None:
-        tmp_dir = f'{file_path}/tmp'
+        run_path = os.getcwd()
+        tmp_dir = f'{run_path}/tmp'
 
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
@@ -1261,12 +1266,29 @@ def clean_delimiters_intersections(delimiters:list[Box],image:Union[str,cv2.typi
                 j += 1
                 continue
             if orientation != compare_delimiter_orientation and delimiter.intersects_box(compare_delimiter):
-                if debug:
-                    print(f'Removing delimiter {delimiter.id} with {compare_delimiter.id} - intersections.')
-                delimiters.pop(i)
-                removed += 1
-                i -= 1
-                break
+                len_del_i = 0
+                len_del_j = 0
+                if orientation == 'horizontal':
+                    len_del_i = delimiter.width
+                    len_del_j = compare_delimiter.height
+                elif orientation == 'vertical':
+                    len_del_i = delimiter.height
+                    len_del_j = compare_delimiter.width
+
+                # remove smaller delimiter
+                if len_del_i > len_del_j:
+                    if debug:
+                        print(f'Removing delimiter {delimiter.id} with {compare_delimiter.id} - intersections.')
+                    delimiters.pop(i)
+                    removed += 1
+                    i -= 1
+                    break
+                else:
+                    if debug:
+                        print(f'Removing delimiter {compare_delimiter.id} with {delimiter.id} - intersections.')
+                    delimiters.pop(j)
+                    removed += 1
+                    j -= 1
             j += 1
         i += 1
 
@@ -1315,13 +1337,19 @@ def clean_delimiters(delimiters:list[Box],image:Union[str,cv2.typing.MatLike],ch
     return delimiters
 
 
-def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,min_length_h:int=None,min_length_v:int=None,max_line_gap_v:int=None,max_line_gap_h:int=None,reduce_delimiters:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
+def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None,
+                            min_length_h:int=None,min_length_v:int=None,
+                            max_line_gap_h:int=None,max_line_gap_v:int=None,
+                            rho_h:int=1,theta_h:float=np.pi/180,
+                            rho_v:int=1,theta_v:float=np.pi/180,
+                            reduce_delimiters:bool=True,logs:bool=False,debug:bool=False)->list[Box]:
     '''Get document delimiters in image using Hough lines. 
 
     reduce_delimiters option will apply clean_delimiters method.'''
 
     if not tmp_dir:
-        tmp_dir = f'{file_path}/tmp'
+        run_path = os.getcwd() 
+        tmp_dir = f'{run_path}/tmp'
 
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
@@ -1361,7 +1389,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     edges = cv2.dilate(edges,(2,4),iterations = 1)
 
     ### get hough lines
-    horizontal_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=min_length_h,maxLineGap=max_line_gap_h)
+    horizontal_lines = cv2.HoughLinesP(edges,rho_h,theta_h,50,None,minLineLength=min_length_h,maxLineGap=max_line_gap_h)
 
     ## vertical lines
     ### identify, remove non vertical and accentuate vertical lines
@@ -1375,7 +1403,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
     edges = cv2.dilate(edges,(4,2),iterations = 1)
 
     ### get hough lines
-    vertical_lines = cv2.HoughLinesP(edges,1,np.pi/180,50,None,minLineLength=min_length_v,maxLineGap=max_line_gap_v)
+    vertical_lines = cv2.HoughLinesP(edges,rho_v,theta_v,50,None,minLineLength=min_length_v,maxLineGap=max_line_gap_v)
 
     lines = []
 
@@ -1389,6 +1417,8 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
     # get delimiters
     delimiters = []
+    t5 = math.tan(5*math.pi/180)
+    t60 = math.sqrt(3)/2
     for line in lines:
         l = line[0]
 
@@ -1397,8 +1427,6 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
         x1 = l[2]
         y1 = l[3]
 
-        t5 = math.tan(5*math.pi/180)
-        t60 = math.sqrt(3)/2
         dx = x1 - x0
         dy = y1 - y0
         is_vertical = dy != 0 and abs(dx/dy) < t5
@@ -1410,9 +1438,9 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
             continue
         
         left = min(x0,x1)
-        right = max(x0,x1)
+        right = max(left+1,x0,x1)
         top = min(y0,y1)
-        bottom = max(y0,y1)
+        bottom = max(top+1,y0,y1)
 
         delimiter = Box(left,right,top,bottom)
         delimiters.append(delimiter)
@@ -1424,8 +1452,18 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
             delimiter.right in [0,image.shape[1]] or\
             delimiter.bottom in [0,image.shape[0]]:
             if debug:
-                print(f'Removing delimiter {delimiter.id} because it is in the border.')
+                print(f'Removing delimiter {delimiter} because it is in the border.')
             delimiters.remove(delimiter)
+
+    if debug:
+        # id all delimiters
+        i = 0
+        for delimiter in delimiters:
+            delimiter.id = i
+            i += 1
+        show = draw_bounding_boxes(image.copy(),delimiters,id=False)
+        cv2.imwrite(f'{tmp_dir}/delimiters_all_lines.png',show)
+    
 
 
     # clean delimiters
@@ -1470,9 +1508,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
             delimiter.id = i
             i += 1
         show = draw_bounding_boxes(image.copy(),delimiters,id=True)
-        show = cv2.resize(show,(1000,1200))
-        cv2.imshow('image',show)
-        cv2.waitKey(0)
+        cv2.imwrite(f'{tmp_dir}/delimiters_final.png',show)
     
     return delimiters
 
