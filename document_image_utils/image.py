@@ -515,7 +515,14 @@ def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoo
     image = image[round(image.shape[0]*0.3):image.shape[0]-round(image.shape[0]*0.1),:]
 
     # binarize
-    binarized = binarize_fax(image,logs=logs)
+    # black and white
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # clean noise
+    se=cv2.getStructuringElement(cv2.MORPH_RECT , (8,8))
+    bg=cv2.morphologyEx(gray, cv2.MORPH_DILATE, se)
+    gray=cv2.divide(gray, bg, scale=255)
+    # binarize
+    binarized = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
 
     # get frequency of white pixels per x axis
     x_axis_freq = np.zeros(binarized.shape[1])
