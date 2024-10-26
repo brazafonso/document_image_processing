@@ -121,7 +121,7 @@ def calculate_rotation_direction(image:Union[str,cv2.typing.MatLike],line_quante
     direction = 'None'
     # crop margin
     image = image[crop_top:image.shape[0]-crop_bottom,crop_left:image.shape[1]-crop_right]
-    binarized = binarize_fax(image,invert=True,logs=False)
+    binarized = binarize_fax(image,treshold=True,invert=True,logs=False)
     filtered = cv2.medianBlur(binarized, 3)
     dilation = cv2.dilate(filtered, np.ones((0,20),np.uint8),iterations=3)
     transformed_image = dilation
@@ -381,7 +381,7 @@ def rotate_image(image:Union[str,cv2.typing.MatLike],line_quantetization:int=Non
         cropped = cut_document_margins(og_img.copy())
         cut_img = og_img[cropped.top:cropped.bottom, cropped.left:cropped.right]
 
-    binary_img = binarize_fax(cut_img,invert=True)
+    binary_img = binarize_fax(cut_img,treshold=True,invert=True)
 
     # get first black pixel in each line of image
     ## analyses lines acording to line_quantetization
@@ -536,6 +536,10 @@ def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoo
 
 
     if x_axis_freq.any():
+        # add padding (10%)
+        pad = round(len(x_axis_freq)*0.1)
+        x_axis_freq = [0]*pad + x_axis_freq.tolist() + [0]*pad
+        x_axis_freq = np.array(x_axis_freq)
         # invert frequencies
         max_freq = max(x_axis_freq)
         x_axis_freq = np.array([max_freq - i for i in x_axis_freq])
@@ -579,8 +583,12 @@ def divide_columns(image:Union[str,cv2.typing.MatLike],method:str='WhittakerSmoo
 
             plt.show()
 
+        # remove pad from peaks
+        peaks = [i - pad for i in peaks]
+
         if logs:
             print('Peaks',peaks)
+
 
         # estimate columns
         potential_columns = []
@@ -675,7 +683,7 @@ def cut_document_margins(image:Union[str,cv2.typing.MatLike], method:str='Whitta
 
     cut_document = Box({'left':0,'right':image.shape[1],'top':0,'bottom':image.shape[0]})
 
-    binarized = binarize_fax(image,invert=True,logs=logs)
+    binarized = binarize_fax(image,treshold=True,invert=True,logs=logs)
 
     # get frequency of black pixels per column
     x_axis_freq = np.add.reduce(binarized, axis=0)
@@ -902,7 +910,8 @@ def level_image(image:Union[str,cv2.typing.MatLike], black_point:Union[int,float
 
 
 def binarize_fax(image:Union[str,cv2.typing.MatLike],g_kernel_size:int=30,g_sigma:int=15,black_point:Union[int,float]=10,
-                 white_point:Union[int,float]=90,gamma:float=0.2,is_percentage:bool=True,invert:bool=False,logs:bool=False)->np.ndarray:
+                 white_point:Union[int,float]=90,gamma:float=0.2,is_percentage:bool=True,invert:bool=False,treshold:bool=False
+                 ,logs:bool=False)->np.ndarray:
     '''Binarize image using fax binarization algorithm.
     
     Algorithm:
@@ -923,6 +932,9 @@ def binarize_fax(image:Union[str,cv2.typing.MatLike],g_kernel_size:int=30,g_sigm
 
     # Step 4: Adjust levels (emulate -level 10%,90%,0.2)
     level = level_image(composite,black_point,white_point,gamma,is_percentage=is_percentage)
+
+    if treshold:
+        level = cv2.threshold(level,128,255,cv2.THRESH_BINARY)[1]
 
     if invert:
         level = 255 - level
@@ -1379,7 +1391,7 @@ def get_document_delimiters(image:Union[str,cv2.typing.MatLike],tmp_dir:str=None
 
 
     # binarize image
-    binarized = binarize_fax(image,logs=logs)
+    binarized = binarize_fax(image,treshold=True,logs=logs)
 
     # dilate
     morph_base = cv2.erode(binarized,(3,3),iterations = 1)
